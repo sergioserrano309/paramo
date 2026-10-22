@@ -1,5 +1,6 @@
 import { ProspectosPanel } from "@/components/ProspectosPanel";
 import { isRol } from "@/config/roles";
+import { fetchProximosPorProspecto } from "@/lib/compromisos";
 import {
   canCreateProspecto,
   requireModuleAccess,
@@ -74,6 +75,11 @@ export default async function ProspectosPage() {
     }
   }
 
+  const proximosPorProspecto = await fetchProximosPorProspecto(
+    service,
+    prospectos.map((p) => p.id),
+  );
+
   const responsables: ResponsableOption[] = [];
   if (!profilesRes.error && profilesRes.data) {
     for (const row of profilesRes.data) {
@@ -102,7 +108,6 @@ export default async function ProspectosPage() {
     responsables,
   };
 
-  // As-is: responsable por defecto = usuario actual (comercial o supervisor).
   const defaultResponsableId = ctx.userId;
 
   return (
@@ -111,6 +116,9 @@ export default async function ProspectosPage() {
       catalogos={catalogos}
       canCreate={canCreateProspecto(ctx.profile.rol)}
       defaultResponsableId={defaultResponsableId}
+      userId={ctx.userId}
+      userRol={ctx.profile.rol}
+      proximosPorProspecto={proximosPorProspecto}
     />
   );
 }

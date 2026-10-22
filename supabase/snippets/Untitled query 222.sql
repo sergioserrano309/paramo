@@ -1,64 +1,103 @@
--- Seed: catálogos del módulo Prospectos (valores del as-is en pre-arquitectura).
--- Aplicar a mano tras la migración 20261022170000_crear_prospectos_y_catalogos.sql.
--- Idempotente: on conflict do update / do nothing.
--- Sin datos personales reales.
+-- Decisión: tabla compromisos para agenda (as-is S.compromisos) y para
+-- "próximo compromiso" en listado de Prospectos y tarjetas del Funnel.
+-- Alternativa descartada: columna jsonb en prospectos — no sirve para agenda
+-- global, filtros por responsable/fecha ni compromisos sin prospecto.
+--
+-- Tipos como CHECK (lista fija del as-is TIPOS), no catálogo: el negocio los
+-- trata como enum de UI; si más adelante se editan sin deploy, migrar a tabla.
+--
+-- Solo esquema. Sin seed ni API de alta en este hito: la UI de /compromisos
+-- sigue placeholder; el listado muestra "Sin compromiso" hasta que haya filas.
 
 begin;
 
-insert into public.canales (codigo, nombre, orden, activo) values
-  ('supermercado_gran_superficie', 'Supermercado / Gran superficie', 1, true),
-  ('tienda_saludable_naturista', 'Tienda saludable / Naturista', 2, true),
-  ('cafeteria_horeca', 'Cafetería / HORECA', 3, true),
-  ('distribuidor', 'Distribuidor', 4, true),
-  ('corporativo_institucional', 'Corporativo / Institucional', 5, true),
-  ('gimnasio_wellness', 'Gimnasio / Wellness', 6, true),
-  ('ecommerce', 'E-commerce', 7, true),
-  ('exportacion', 'Exportación', 8, true),
-  ('otros', 'Otros', 9, true)
-on conflict (codigo) do update set
-  nombre = excluded.nombre,
-  orden = excluded.orden,
-  activo = excluded.activo;
+create table if not exists public.compromisos (
+  id uuid primary key default gen_random_uuid(),
+  titulo text not null,
+  tipo text not null,
+  fecha date not null,
+  prospecto_id uuid references public.prospectos (id) on delete set null,
+  hecho boolean not null default false,
+  hecho_en date,
+  notas text not null default '',
+  -- true = creada/asignada por supervisor al comercial (as-is asignado).
+  asignado boolean not null default false,
+  responsable_id uuid references public.profiles (id) on delete set null,
+  creado_por uuid references public.profiles (id) on delete set null,
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  constraint compromisos_titulo_no_vacio check (length(trim(titulo)) > 0),
+  constraint compromisos_tipo_check check (
+    tipo in (
+      'Llamada',
+      'Visita',
+      'WhatsApp',
+      'Correo',
+      'Enviar muestra',
+      'Degustación',
+      'Enviar cotización',
+      'Seguimiento',
+      'Cobro',
+      'Otro'
+    )
+  ),
+  constraint compromisos_notas_len check (char_length(notas) <= 4000)
+);
 
-insert into public.fuentes (codigo, nombre, orden, activo) values
-  ('referido', 'Referido', 1, true),
-  ('feria_evento', 'Feria / evento', 2, true),
-  ('visita_en_frio', 'Visita en frío', 3, true),
-  ('instagram_web', 'Instagram / web', 4, true),
-  ('linkedin', 'LinkedIn', 5, true),
-  ('base_de_datos', 'Base de datos', 6, true),
-  ('otro', 'Otro', 7, true)
-on conflict (codigo) do update set
-  nombre = excluded.nombre,
-  orden = excluded.orden,
-  activo = excluded.activo;
+comment on table public.compromisos is
+  'Agenda de seguimientos (as-is compromisos). Esquema listo; alta UI en hito Compromisos.';
+comment on column public.compromisos.titulo is
+  'Qué hay que hacer (as-is titulo).';
+comment on column public.compromisos.tipo is
+  'Tipo de actividad; enum alineado al as-is TIPOS.';
+comment on column public.compromisos.fecha is
+  'Fecha límite (as-is fecha), calendario America/Bogota.';
+comment on column public.compromisos.prospecto_id is
+  'Prospecto vinculado; null = tarea general sin cliente (as-is prospectoId vacío).';
+comment on column public.compromisos.hecho is
+  'true = cumplido (as-is hecho).';
+comment on column public.compromisos.hecho_en is
+  'Día en que se marcó hecho (as-is hechoEn).';
+comment on column public.compromisos.asignado is
+  'true si el supervisor la asignó (as-is asignado).';
+comment on column public.compromisos.responsable_id is
+  'Quién lo hace; null hereda lógica de app (as-is responsable / creadoPor).';
 
-insert into public.tipos_cliente (codigo, nombre, descuento_pct_default, orden, activo) values
-  ('distribuidor', 'Distribuidor', 35, 1, true),
-  ('cadena', 'Gran superficie / Cadena', 28, 2, true),
-  ('tienda', 'Tienda / Detal', 20, 3, true),
-  ('horeca', 'HORECA', 18, 4, true),
-  ('corporativo', 'Corporativo / Institucional', 12, 5, true),
-  ('final', 'Consumidor final (PVP)', 0, 6, true)
-on conflict (codigo) do update set
-  nombre = excluded.nombre,
-  descuento_pct_default = excluded.descuento_pct_default,
-  orden = excluded.orden,
-  activo = excluded.activo;
+-- nextComp(pid): pendientes del prospecto ordenados por fecha.
+create index if not exists compromisos_proximo_idx
+  on public.compromisos (prospecto_id, fecha)
+  where hecho = false and prospecto_id is not null;
 
-insert into public.etapas_funnel (codigo, nombre, probabilidad, orden, en_pipeline, activo) values
-  ('prospecto', 'Prospecto', 10, 1, true, true),
-  ('contactado', 'Contactado', 20, 2, true, true),
-  ('muestra', 'Muestra / degustación', 40, 3, true, true),
-  ('propuesta', 'Propuesta enviada', 60, 4, true, true),
-  ('negociacion', 'Negociación', 80, 5, true, true),
-  ('ganado', 'Ganado', 100, 6, false, true),
-  ('perdido', 'Perdido', 0, 7, false, true)
-on conflict (codigo) do update set
-  nombre = excluded.nombre,
-  probabilidad = excluded.probabilidad,
-  orden = excluded.orden,
-  en_pipeline = excluded.en_pipeline,
-  activo = excluded.activo;
+-- Agenda por responsable / vencidos.
+create index if not exists compromisos_responsable_fecha_idx
+  on public.compromisos (responsable_id, fecha)
+  where hecho = false;
+
+create index if not exists compromisos_fecha_idx
+  on public.compromisos (fecha);
+
+alter table public.compromisos enable row level security;
+revoke all on public.compromisos from anon, authenticated;
+
+create or replace function public.set_compromisos_actualizado_en()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  new.actualizado_en = now();
+  return new;
+end;
+$$;
+
+revoke all on function public.set_compromisos_actualizado_en()
+  from public, anon, authenticated;
+
+drop trigger if exists compromisos_set_actualizado_en on public.compromisos;
+create trigger compromisos_set_actualizado_en
+  before update on public.compromisos
+  for each row
+  execute function public.set_compromisos_actualizado_en();
 
 commit;

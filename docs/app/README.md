@@ -10,8 +10,8 @@
 | [01-auth.md](./01-auth.md) | Auth Hito 1: login, profiles, middleware, logout |
 | [02-permisos.md](./02-permisos.md) | Permisos Hito 2: roles, módulos, `can` / guards |
 | [03-usuarios.md](./03-usuarios.md) | Usuarios: alta Auth + profiles (solo supervisor) |
-| [04-prospectos.md](./04-prospectos.md) | Prospectos: catálogos, alta, listado, bitácora (esquema) |
-| [05-funnel.md](./05-funnel.md) | Funnel: tablero por etapas, mover, Abrir (ver + etapa) |
+| [04-prospectos.md](./04-prospectos.md) | Prospectos: listado as-is, filtros, ficha, compromisos (esquema) |
+| [05-funnel.md](./05-funnel.md) | Funnel: tablero, mover, Abrir, próximo compromiso |
 
 ## Módulos (rutas)
 
@@ -20,9 +20,9 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 - `/dashboard`
 - `/supervision` — solo `supervisor`
 - `/usuarios` — solo `supervisor` (crear y listar)
-- `/prospectos` — listado + alta (barra rápida y drawer)
-- `/funnel` — tablero kanban, mover etapa, Abrir, + Prospecto
-- `/compromisos`
+- `/prospectos` — listado as-is, filtros, alta, ficha (click)
+- `/funnel` — tablero kanban, mover etapa, Abrir, próximo compromiso
+- `/compromisos` — placeholder (tabla `compromisos` ya existe; UI pendiente)
 - `/cotizaciones`
 - `/productos`
 - `/ventas`
