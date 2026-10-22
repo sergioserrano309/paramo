@@ -18,6 +18,13 @@
   --paramo-teal-soft: #e2f0ea;
   --paramo-olive: #9e9e3f;
   --paramo-leaf: #86ba4e;
+  --paramo-rasp: #b44266;
+  /* Escala de columnas del funnel (as-is --s1…--s5). */
+  --paramo-stage-1: #d3e6de;
+  --paramo-stage-2: #a6cdbe;
+  --paramo-stage-3: #78b29b;
+  --paramo-stage-4: #54967e;
+  --paramo-stage-5: #3a735f;
   --paramo-good: #3e8b52;
   --paramo-warn: #b26a12;
   --paramo-bad: #c0392b;
@@ -39,6 +46,12 @@
   --paramo-teal-soft: #1c332c;
   --paramo-olive: #caca6c;
   --paramo-leaf: #a8d672;
+  --paramo-rasp: #e57e9f;
+  --paramo-stage-1: #2d4840;
+  --paramo-stage-2: #3b6254;
+  --paramo-stage-3: #4f806c;
+  --paramo-stage-4: #66a28a;
+  --paramo-stage-5: #88c6ac;
   --paramo-good: #7ad490;
   --paramo-warn: #f0b55c;
   --paramo-bad: #f3836f;
@@ -60,6 +73,12 @@
   --color-paramo-teal-soft: var(--paramo-teal-soft);
   --color-paramo-olive: var(--paramo-olive);
   --color-paramo-leaf: var(--paramo-leaf);
+  --color-paramo-rasp: var(--paramo-rasp);
+  --color-paramo-stage-1: var(--paramo-stage-1);
+  --color-paramo-stage-2: var(--paramo-stage-2);
+  --color-paramo-stage-3: var(--paramo-stage-3);
+  --color-paramo-stage-4: var(--paramo-stage-4);
+  --color-paramo-stage-5: var(--paramo-stage-5);
   --color-paramo-good: var(--paramo-good);
   --color-paramo-warn: var(--paramo-warn);
   --color-paramo-bad: var(--paramo-bad);

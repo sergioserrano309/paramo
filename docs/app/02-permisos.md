@@ -35,9 +35,15 @@
 4. En APIs: usar `requireApiPermission('usuarios')` (etc.) antes de mutar — ver
    [03-usuarios.md](./03-usuarios.md).
 
+## Novedades posteriores (Hito 4 — Funnel)
+
+- `canEditProspecto` (as-is `canEditP`): `editar` **o** soy el responsable.
+  Usado al mover etapa en el funnel. El supervisor sin ser responsable no mueve.
+  **Pendiente validar con negocio** — detalle en [05-funnel.md](./05-funnel.md).
+
 ## Fuera de alcance
 
-- Ownership fila a fila completo (editar ficha, filtros por responsable). Ver
+- Ownership de lectura (filtros por responsable en listados). Ver
   [04-prospectos.md](./04-prospectos.md): hoy la lista es «todos ven todos» y el
   comercial puede elegir responsable en el alta — ambas cosas pendientes de
   validar con negocio.

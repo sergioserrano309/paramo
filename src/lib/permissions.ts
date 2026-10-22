@@ -1,26 +1,18 @@
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
-import {
-  MODULO_ROLES,
-  ROL_ACCIONES,
-  type Accion,
-  type Modulo,
-} from "@/config/permissions";
-import type { Rol } from "@/config/roles";
+import type { Accion, Modulo } from "@/config/permissions";
 import { getAuthContext, type AuthContext } from "@/lib/auth";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
+import { can, canAccessModule } from "@/lib/can";
 
-/** Equivalente a `can(a)` del as-is. */
-export function can(rol: Rol, accion: Accion): boolean {
-  return ROL_ACCIONES[rol].includes(accion);
-}
+export {
+  can,
+  canAccessModule,
+  canCreateProspecto,
+  canEditProspecto,
+} from "@/lib/can";
 
-/** Equivalente a filtrar VIEWS con `only`. */
-export function canAccessModule(rol: Rol, modulo: Modulo): boolean {
-  return MODULO_ROLES[modulo].includes(rol);
-}
-
-export function assertCan(rol: Rol, accion: Accion): void {
+export function assertCan(rol: Parameters<typeof can>[0], accion: Accion): void {
   if (!can(rol, accion)) {
     throw new PermissionDeniedError(accion);
   }
@@ -91,11 +83,6 @@ export async function requireApiModuleAccess(
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
   return ctx;
-}
-
-/** Equivalente a canCreateP del as-is. */
-export function canCreateProspecto(rol: Rol): boolean {
-  return can(rol, "editar") || can(rol, "asignar");
 }
 
 export function isAuthContext(

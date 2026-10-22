@@ -11,6 +11,7 @@
 | [02-permisos.md](./02-permisos.md) | Permisos Hito 2: roles, módulos, `can` / guards |
 | [03-usuarios.md](./03-usuarios.md) | Usuarios: alta Auth + profiles (solo supervisor) |
 | [04-prospectos.md](./04-prospectos.md) | Prospectos: catálogos, alta, listado, bitácora (esquema) |
+| [05-funnel.md](./05-funnel.md) | Funnel: tablero por etapas, mover, Abrir (ver + etapa) |
 
 ## Módulos (rutas)
 
@@ -20,7 +21,7 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 - `/supervision` — solo `supervisor`
 - `/usuarios` — solo `supervisor` (crear y listar)
 - `/prospectos` — listado + alta (barra rápida y drawer)
-- `/funnel`
+- `/funnel` — tablero kanban, mover etapa, Abrir, + Prospecto
 - `/compromisos`
 - `/cotizaciones`
 - `/productos`
@@ -28,6 +29,6 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 
 Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
 `GET /api/auth/me`, `GET /api/health`, `GET/POST /api/usuarios`,
-`GET/POST /api/prospectos`.
+`GET/POST /api/prospectos`, `PATCH /api/prospectos/[id]/etapa`.
 
 Matriz detallada: [`docs/platform/04-roles-y-permisos.md`](../platform/04-roles-y-permisos.md).

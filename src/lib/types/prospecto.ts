@@ -42,6 +42,9 @@ export type ProspectoListItem = {
   calificacion: number;
   notas: string;
   activo: boolean;
+  motivo_perdida: string;
+  etapa_desde: string;
+  ganado_en: string | null;
   responsable_id: string;
   responsable_nombre: string;
   creado_en: string;

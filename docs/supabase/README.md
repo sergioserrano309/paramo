@@ -62,7 +62,8 @@ Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
 `bitacora`: `ocurrido_en`, `actor_id`, `rol`, `accion`, `detalle` (≤400),
 `ref_tabla` / `ref_id`. Solo esquema en este hito (sin writes desde la app aún).
 
-Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md).
+Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
+[docs/app/05-funnel.md](../app/05-funnel.md) (cambio de etapa).
 
 ### Inventario objetivo (aún sin migración de dominio)
 
