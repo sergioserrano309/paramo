@@ -1,6 +1,9 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function FunnelPage() {
+export default async function FunnelPage() {
+  await requireModuleAccess("funnel");
+
   return (
     <ModulePlaceholder
       title="Funnel"

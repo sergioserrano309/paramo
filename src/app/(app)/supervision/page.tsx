@@ -1,10 +1,14 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function SupervisionPage() {
+export default async function SupervisionPage() {
+  // Solo supervisor (as-is: VIEWS.only === 'supervisor').
+  await requireModuleAccess("supervision");
+
   return (
     <ModulePlaceholder
       title="Supervisión"
-      description="Bitácora, usuarios y auditoría del rol supervisor."
+      description="Bitácora y auditoría del rol supervisor. El alta de usuarios está en Usuarios."
     />
   );
 }

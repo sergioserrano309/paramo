@@ -1,6 +1,9 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function CotizacionesPage() {
+export default async function CotizacionesPage() {
+  await requireModuleAccess("cotizaciones");
+
   return (
     <ModulePlaceholder
       title="Cotizaciones"

@@ -32,6 +32,7 @@ src/
 │   ├── (app)/               # Shell autenticado de la plataforma
 │   │   ├── dashboard/
 │   │   ├── supervision/     # auditoría / vista del supervisor (as-is)
+│   │   ├── usuarios/        # alta de usuarios (solo supervisor)
 │   │   ├── prospectos/
 │   │   ├── funnel/
 │   │   ├── compromisos/
@@ -46,8 +47,9 @@ src/
 ├── config/                  # Configuración de negocio
 ├── hooks/  lib/  styles/    # Hooks, utilidades y design tokens
 supabase/
-├── migrations/              # Migraciones SQL versionadas
-└── seed/                    # SQL mock seed/unseed (no son migraciones)
+├── migrations/              # Solo esquema/reglas de BD (sin INSERT de datos)
+├── seed/                    # Mock/seed versionado (aplicar a mano)
+└── local/                   # SQL ad hoc local (gitignored; no subir)
 docs/
 ├── platform/                # Documentación as-is del sistema actual (especificación)
 ├── app/                     # Documentación to-be de lo implementado en Next.js
@@ -147,7 +149,8 @@ código compile.
 | Tipo de cambio | Destino |
 |---|---|
 | Pieza de la app Next.js (auth, shell, módulo, API) | `docs/app/` — crea o actualiza el doc del tema y el índice [`docs/app/README.md`](docs/app/README.md) |
-| Schema, RLS, seeds, variables Supabase | [`docs/supabase/README.md`](docs/supabase/README.md) y/o nota en `docs/app/` si afecta la app |
+| Schema, RLS, seed mock, variables Supabase | [`docs/supabase/README.md`](docs/supabase/README.md) y/o nota en `docs/app/` si afecta la app |
+| SQL ad hoc en `supabase/local/` | No se documenta ni se versiona; ver §3.5 |
 | Comportamiento as-is (solo si se descubre algo nuevo del sistema viejo) | `docs/platform/` — sin reescribir el snapshot `pre-arquitectura/` |
 | Variables de entorno nuevas | `.env.example` **y** mención en el doc correspondiente |
 | Cambio que invalida AGENTS.md | Actualiza **este archivo** en la misma entrega |
@@ -252,7 +255,10 @@ Mapa, mapeo as-is→tabla y validaciones pendientes: `docs/supabase/README.md`.
 
 `profiles` es la tabla de autorización de la app: un registro por usuario de Supabase Auth
 (`auth.users`), con el rol de negocio y los datos de perfil necesarios (nombre, activo,
-etc.). La columna `rol` se restringe en la base a los valores canónicos:
+etc.). La fila y el `rol` no se crean por trigger al registrarse: altas operativas van por
+la API `/api/usuarios` (supervisor); el bootstrap del primer supervisor vive en
+`supabase/local/` (solo máquina local). La columna `rol` no tiene default y se restringe
+en la base a los valores canónicos:
 
 `comercial` · `supervisor`.
 
@@ -267,6 +273,12 @@ por hecha. Una migración commiteada y nunca aplicada no cuenta.
 
 Nombre: `supabase/migrations/AAAAMMDDHHMMSS_descripcion_en_snake_case.sql`.
 Nunca edites una migración ya aplicada: escribe una nueva encima.
+
+**Solo esquema y reglas de base de datos.** Una migración crea o altera tablas, columnas,
+índices, constraints, RLS, `revoke`, triggers, funciones, vistas y relaciones. **No**
+incluye `INSERT` / `UPDATE` / carga de filas de negocio, catálogo ni datos de prueba
+(productos, canales, prospectos, usuarios de demo, etc.). Mock compartido →
+`supabase/seed/` (§3.4). SQL ad hoc de desarrollo → `supabase/local/` (§3.5).
 
 Toda migración lleva:
 
@@ -288,7 +300,34 @@ Toda migración lleva:
   (variables de entorno / Vault); un secreto escrito en un trigger es legible desde el
   catálogo.
 
-### 3.4 Datos personales y financieros
+### 3.4 Seed versionado (`supabase/seed/`) — mock compartido, no migraciones
+
+`supabase/seed/` guarda SQL de **datos mock / semilla** que **sí se versionan** en el
+repo, para que cualquier persona pueda aplicar filas de prueba tras las migraciones.
+
+Reglas:
+
+- Solo datos de prueba/mock seguros para el equipo. **Nunca** datos personales reales ni
+  secretos.
+- No es esquema: si hace falta una tabla o columna, va en `migrations/` primero.
+- Catálogo o filas que el negocio puede cambiar (productos, canales, etc.) van aquí (o en
+  la app), **no** en `migrations/`.
+- Ejecución **manual** (SQL Editor, `psql`, etc.). Hoy no hay cableado a `supabase db seed`.
+- El bootstrap del primer supervisor **no** va en seed: va en `supabase/local/` (§3.5).
+
+### 3.5 SQL local de desarrollo (`supabase/local/`)
+
+`supabase/local/` es solo para la máquina del desarrollador: scripts `.sql` ad hoc mientras
+se desarrolla (escenarios temporales, bootstrap del primer supervisor, experimentos).
+
+Reglas:
+
+- La carpeta **no se sube** a GitHub: está en `supabase/.gitignore` (`local/`).
+- Cada quien la crea en local si la necesita (`supabase/local/`).
+- Sin orden fijo respecto a migraciones o seed: se generan y ejecutan según necesidad.
+- Ejecución manual. No sustituye a `seed/` para datos que el equipo deba compartir.
+
+### 3.6 Datos personales y financieros
 
 Este proyecto almacena nombres de contactos y usuarios, NIT, teléfonos, emails, montos de
 cotización y venta, canales y trazas operativas. En consecuencia:
@@ -489,6 +528,10 @@ Hasta entonces, esta sección existe para impedir que se añada telemetría sin 
 
 - ❌ Crear una tabla sin RLS, o con una política permisiva a `anon` / `authenticated`.
 - ❌ Crear una tabla cuando bastaba una columna.
+- ❌ Meter `INSERT` / carga de filas de negocio o de prueba en `supabase/migrations/`.
+  Mock compartido → `supabase/seed/`; ad hoc local → `supabase/local/`.
+- ❌ Versionar `supabase/local/` ni subir SQL de desarrollo personal al remoto.
+- ❌ Meter datos personales reales o secretos en `supabase/seed/`.
 - ❌ Consultar Supabase desde el navegador para datos de negocio. Todo pasa por
   `src/app/api/*`.
 - ❌ Ejecutar migraciones o código directamente en la base de datos de pruebas o de
@@ -523,9 +566,10 @@ aprobación explícita** del usuario antes de continuar.
        `npm run lint` pasa. En cambios menores, se recomienda haberlos corrido al menos de
        forma periódica en la rama.
 2. [ ] TypeScript sin `any` nuevos y sin `@ts-ignore`.
-3. [ ] Si tocaste la base de datos: migración con encabezado explicativo, transacción,
-       idempotente, RLS habilitada, `revoke` aplicado, comentarios en tablas y columnas,
-       constraints e índices justificados.
+3. [ ] Si tocaste la base de datos: migración solo de esquema/reglas (sin carga de filas),
+       con encabezado explicativo, transacción, idempotente, RLS habilitada, `revoke`
+       aplicado, comentarios en tablas y columnas, constraints e índices justificados.
+       Mock compartido → `supabase/seed/`; SQL ad hoc → `supabase/local/` (no versionar).
 4. [ ] Si añadiste un endpoint: zod, límite de tamaño, auth/rol según corresponda, y cero
        datos sensibles en logs.
 5. [ ] Si tocaste la UI: tokens `paramo-*`, tema claro/oscuro coherente con el as-is,

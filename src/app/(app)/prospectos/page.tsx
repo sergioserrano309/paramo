@@ -1,6 +1,9 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function ProspectosPage() {
+export default async function ProspectosPage() {
+  await requireModuleAccess("prospectos");
+
   return (
     <ModulePlaceholder
       title="Prospectos"

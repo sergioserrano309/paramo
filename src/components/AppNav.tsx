@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { APP_NAV } from "@/config/navigation";
+import type { NavItem } from "@/config/navigation";
 
-export function AppNav() {
+type AppNavProps = {
+  items: NavItem[];
+};
+
+export function AppNav({ items }: AppNavProps) {
   const pathname = usePathname();
 
   return (
@@ -12,7 +16,7 @@ export function AppNav() {
       className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
       aria-label="Módulos"
     >
-      {APP_NAV.map((item) => {
+      {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link

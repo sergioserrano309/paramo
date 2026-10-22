@@ -1,6 +1,9 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function ProductosPage() {
+export default async function ProductosPage() {
+  await requireModuleAccess("productos");
+
   return (
     <ModulePlaceholder
       title="Productos"

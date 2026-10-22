@@ -2,6 +2,9 @@
 .branches
 .temp
 
+# SQL ad hoc solo en la máquina del desarrollador. No versionar.
+local/
+
 # dotenvx
 .env.keys
 .env.local

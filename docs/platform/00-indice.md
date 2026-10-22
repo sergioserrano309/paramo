@@ -10,7 +10,7 @@ Mientras este árbol se completa, la fuente de verdad del comportamiento y la es
 
 1. Este índice
 2. `02-modelo-de-datos.md` (por crear)
-3. `04-roles-y-permisos.md` (por crear)
+3. [`04-roles-y-permisos.md`](./04-roles-y-permisos.md) — matriz rol × módulo × acción (as-is)
 4. `07-estados.md` (por crear)
 5. `05-modulos/` (por crear)
 6. `08-hallazgos.md` / `09-preguntas-abiertas.md` (por crear)

@@ -1,6 +1,9 @@
 import { ModulePlaceholder } from "@/components/ModulePlaceholder";
+import { requireModuleAccess } from "@/lib/permissions";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireModuleAccess("dashboard");
+
   return (
     <ModulePlaceholder
       title="Dashboard"

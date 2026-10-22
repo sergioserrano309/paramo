@@ -1,5 +1,6 @@
 import { AppNav } from "@/components/AppNav";
 import { LogoutButton } from "@/components/LogoutButton";
+import { navForRol } from "@/config/navigation";
 import { ROL_LABEL } from "@/config/roles";
 import type { Profile } from "@/lib/types/profile";
 
@@ -9,6 +10,8 @@ type AppShellProps = {
 };
 
 export function AppShell({ children, profile }: AppShellProps) {
+  const navItems = navForRol(profile.rol);
+
   return (
     <div className="min-h-screen bg-paramo-bg text-paramo-fg md:grid md:grid-cols-[224px_1fr]">
       <aside className="sticky top-0 flex h-auto flex-col gap-1 border-b border-paramo-line bg-paramo-surface p-3 md:h-screen md:border-b-0 md:border-r md:p-4">
@@ -23,7 +26,7 @@ export function AppShell({ children, profile }: AppShellProps) {
             CRM comercial
           </p>
         </div>
-        <AppNav />
+        <AppNav items={navItems} />
         <div className="mt-auto space-y-2 pt-4">
           <div className="rounded-[10px] border border-paramo-line bg-paramo-surface-2 p-2.5">
             <p className="truncate text-sm font-bold text-paramo-fg">

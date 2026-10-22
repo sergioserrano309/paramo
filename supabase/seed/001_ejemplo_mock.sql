@@ -1,0 +1,16 @@
+-- Seed de ejemplo (mock versionado).
+-- Aplicar a mano tras las migraciones (SQL Editor / psql). No es una migración.
+-- Sustituye o amplía este archivo con inserts mock seguros para el equipo.
+-- No pongas datos personales reales ni secretos.
+--
+-- El bootstrap del primer supervisor (Auth + profiles) NO va aquí:
+-- usa supabase/local/ (carpeta solo local, ignorada por git).
+--
+-- begin;
+--
+-- -- Ejemplo futuro (cuando exista la tabla):
+-- -- insert into public.productos (id, nombre, ...)
+-- -- values (...)
+-- -- on conflict do nothing;
+--
+-- commit;
