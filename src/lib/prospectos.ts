@@ -4,6 +4,7 @@ export const PROSPECTO_SELECT_LIST = `
   id, empresa, nit, contacto, cargo, telefono, email, ciudad,
   canal_codigo, tipo_cliente_codigo, fuente_codigo, etapa_codigo,
   valor_mensual_estimado, calificacion, notas, activo,
+  motivo_perdida, etapa_desde, ganado_en,
   responsable_id, creado_en, ultimo_contacto,
   canales ( nombre ),
   tipos_cliente ( nombre ),
@@ -29,6 +30,9 @@ export type ProspectoRow = {
   calificacion: number;
   notas: string;
   activo: boolean;
+  motivo_perdida: string;
+  etapa_desde: string;
+  ganado_en: string | null;
   responsable_id: string;
   creado_en: string;
   ultimo_contacto: string | null;
@@ -61,6 +65,9 @@ export function mapProspectoRow(row: ProspectoRow): ProspectoListItem {
     calificacion: row.calificacion ?? 0,
     notas: row.notas ?? "",
     activo: row.activo !== false,
+    motivo_perdida: row.motivo_perdida ?? "",
+    etapa_desde: row.etapa_desde,
+    ganado_en: row.ganado_en,
     responsable_id: row.responsable_id,
     responsable_nombre: row.responsable?.nombre ?? "—",
     creado_en: row.creado_en,

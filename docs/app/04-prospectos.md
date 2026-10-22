@@ -107,7 +107,9 @@ las columnas actuales. No se hace en este hito.
 
 ## Fuera de alcance (siguientes hitos)
 
-- Editar ficha, cambiar etapa, inactivar, eliminar.
+- Editar ficha, inactivar, eliminar.
+- Cambiar etapa desde este listado (sí está en `/funnel`; ver
+  [05-funnel.md](./05-funnel.md)).
 - Historial de actividad / productos de interés.
 - Inserts en `bitacora` y UI de Supervisión.
 - Ownership fila a fila y filtros avanzados del as-is.
