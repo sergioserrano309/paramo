@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { Suspense } from "react";
+import { LoginForm } from "@/components/LoginForm";
 
 export default function LoginPage() {
   return (
@@ -12,21 +13,12 @@ export default function LoginPage() {
             Ingresar
           </h1>
           <p className="text-sm text-paramo-muted">
-            Setup inicial: la autenticación con Supabase Auth se conectará aquí.
-            Mientras tanto puedes explorar el shell de módulos.
+            Usa el correo y contraseña de tu usuario en Supabase Auth.
           </p>
         </div>
-        <Link
-          href="/dashboard"
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-paramo-brand px-4 text-sm font-bold text-paramo-brand-ink hover:brightness-110"
-        >
-          Entrar al CRM (preview)
-        </Link>
-        <p className="text-xs text-paramo-muted">
-          Configura las variables de{" "}
-          <code className="text-paramo-fg">.env.example</code> en{" "}
-          <code className="text-paramo-fg">.env.local</code> antes de conectar Auth.
-        </p>
+        <Suspense fallback={<p className="text-sm text-paramo-muted">Cargando…</p>}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );

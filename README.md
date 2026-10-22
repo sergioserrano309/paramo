@@ -15,8 +15,10 @@ cp .env.example .env.local
 npm run dev
 ```
 
-- App: [http://localhost:3000](http://localhost:3000)
+- App: [http://localhost:3000](http://localhost:3000) → `/login`
 - Health: [http://localhost:3000/api/health](http://localhost:3000/api/health)
+
+Aplica la migración `profiles` en Supabase y crea un usuario (ver [`docs/app/01-auth.md`](./docs/app/01-auth.md)).
 
 ```bash
 npm run build

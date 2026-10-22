@@ -7,3 +7,7 @@ export const ROL_LABEL: Record<Rol, string> = {
   comercial: "Comercial",
   supervisor: "Supervisor",
 };
+
+export function isRol(value: string): value is Rol {
+  return (ROLES as readonly string[]).includes(value);
+}

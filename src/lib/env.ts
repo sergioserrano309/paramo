@@ -1,10 +1,6 @@
 /**
  * Lectura de variables de entorno.
- * Fallar cerrado en operaciones de datos: hasSupabaseServiceConfig() debe ser true
- * antes de crear el cliente service_role.
- *
- * No usamos zod.parse estricto en URL en build: las vars pueden ir vacías en el setup
- * local hasta que cada persona complete .env.local.
+ * Fallar cerrado en Auth y datos: hasSupabaseAuthConfig / hasSupabaseServiceConfig.
  */
 
 export function getPublicEnv() {
@@ -19,6 +15,14 @@ export function getServerEnv() {
   return {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   };
+}
+
+export function hasSupabaseAuthConfig() {
+  const pub = getPublicEnv();
+  return (
+    pub.NEXT_PUBLIC_SUPABASE_URL.startsWith("http") &&
+    pub.NEXT_PUBLIC_SUPABASE_ANON_KEY.length > 0
+  );
 }
 
 /** True cuando hay URL + service role para operaciones de datos en API. */

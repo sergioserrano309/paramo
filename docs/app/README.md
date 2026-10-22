@@ -7,10 +7,11 @@
 | Doc | Tema |
 |---|---|
 | [00-setup.md](./00-setup.md) | Setup inicial: instalar, variables, correr en local |
+| [01-auth.md](./01-auth.md) | Auth Hito 1: login, profiles, middleware, logout |
 
 ## Módulos (rutas)
 
-Rutas stub bajo `src/app/(app)/`:
+Rutas bajo `src/app/(app)/` (requieren sesión):
 
 - `/dashboard`
 - `/supervision`
@@ -21,6 +22,6 @@ Rutas stub bajo `src/app/(app)/`:
 - `/productos`
 - `/ventas`
 
-Auth preview: `/login`. Health API: `GET /api/health`.
+Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/health`.
 
 Actualiza este índice al entregar cada módulo.

@@ -1,9 +1,15 @@
 import { AppShell } from "@/components/AppShell";
+import { requireAuthContext } from "@/lib/auth";
 
-export default function AuthenticatedLayout({
+/** Auth depende de cookies/sesión: no prerenderizar el shell como estático. */
+export const dynamic = "force-dynamic";
+
+export default async function AuthenticatedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <AppShell>{children}</AppShell>;
+  const { profile } = await requireAuthContext();
+
+  return <AppShell profile={profile}>{children}</AppShell>;
 }

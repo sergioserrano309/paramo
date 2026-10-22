@@ -14,8 +14,8 @@
 
 - **API + service_role + RLS sin políticas:** el navegador no consulta datos de negocio en Supabase; todo pasa por `src/app/api/*` (ver `AGENTS.md` §3).
 - **Módulos como stubs:** el setup deja rutas y shell listos; la lógica se porta después desde `pre-arquitectura/` sin editar ese snapshot.
-- **Login preview:** botón temporal hacia `/dashboard` hasta cablear Supabase Auth.
 - **`.env.example` versionado; `.env` / `.env.local` ignorados.**
+- Auth real (login + middleware + `profiles`): ver [01-auth.md](./01-auth.md).
 
 ## Novedades respecto al as-is
 
