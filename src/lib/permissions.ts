@@ -63,6 +63,41 @@ export async function requireApiPermission(
   return ctx;
 }
 
+/**
+ * Sesión + al menos una de las acciones (as-is canCreateP: editar || asignar).
+ */
+export async function requireApiAnyPermission(
+  acciones: readonly Accion[],
+): Promise<AuthContext | NextResponse> {
+  const ctx = await getAuthContext();
+  if (!ctx) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 401 });
+  }
+  if (!acciones.some((accion) => can(ctx.profile.rol, accion))) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+  }
+  return ctx;
+}
+
+/** Sesión + acceso al módulo (lectura de listados). */
+export async function requireApiModuleAccess(
+  modulo: Modulo,
+): Promise<AuthContext | NextResponse> {
+  const ctx = await getAuthContext();
+  if (!ctx) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 401 });
+  }
+  if (!canAccessModule(ctx.profile.rol, modulo)) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+  }
+  return ctx;
+}
+
+/** Equivalente a canCreateP del as-is. */
+export function canCreateProspecto(rol: Rol): boolean {
+  return can(rol, "editar") || can(rol, "asignar");
+}
+
 export function isAuthContext(
   value: AuthContext | NextResponse,
 ): value is AuthContext {

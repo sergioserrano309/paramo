@@ -23,8 +23,15 @@ Detalle: [`.env.example`](../../.env.example).
 | Archivo | Qué hace |
 |---|---|
 | `20261022153000_crear_profiles.sql` | Tabla `profiles`, RLS+revoke, trigger `actualizado_en` (sin auto-perfil al registrarse) |
+| `20261022170000_crear_prospectos_y_catalogos.sql` | Catálogos (`canales`, `fuentes`, `tipos_cliente`, `etapas_funnel`), `prospectos`, `bitacora` (esquema); RLS+revoke |
 
 **Importante:** una migración en el repo no cuenta hasta aplicarla en el proyecto Supabase.
+
+### Seed (aplicar a mano)
+
+| Archivo | Qué hace |
+|---|---|
+| `002_catalogos_prospectos.sql` | Inserta canales, fuentes, tipos de cliente y etapas del as-is |
 
 ## Tablas
 
@@ -43,10 +50,26 @@ La fila en `profiles` no se crea sola al registrar en Auth. Flujo operativo: mó
 `supabase/local/` (solo máquina local) o Table Editor. Ver [docs/app/01-auth.md](../app/01-auth.md)
 y [docs/app/03-usuarios.md](../app/03-usuarios.md).
 
-### Inventario objetivo (aún sin migración)
+### Catálogos y `prospectos` (migración + seed)
 
-`prospectos` · `compromisos` · `cotizaciones` · `productos` · `ventas` ·
-`ventas_meses` · `observaciones` · `bitacora`
+Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
+`etapas_funnel`. Valores iniciales en `supabase/seed/002_catalogos_prospectos.sql`.
+
+`prospectos`: empresa, contacto (columnas), FKs a catálogos, `responsable_id` →
+`profiles`, calificación 0–3, etapa, valor mensual, activo, auditoría
+(`creado_por` / `actualizado_por`). Sin UNIQUE en `empresa`.
+
+`bitacora`: `ocurrido_en`, `actor_id`, `rol`, `accion`, `detalle` (≤400),
+`ref_tabla` / `ref_id`. Solo esquema en este hito (sin writes desde la app aún).
+
+Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md).
+
+### Inventario objetivo (aún sin migración de dominio)
+
+`compromisos` · `cotizaciones` · `productos` · `ventas` · `ventas_meses` ·
+`observaciones`
+
+(`prospectos` y `bitacora` ya tienen migración; `bitacora` sin escritura aún.)
 
 ## Carpetas
 

@@ -10,6 +10,7 @@
 | [01-auth.md](./01-auth.md) | Auth Hito 1: login, profiles, middleware, logout |
 | [02-permisos.md](./02-permisos.md) | Permisos Hito 2: roles, módulos, `can` / guards |
 | [03-usuarios.md](./03-usuarios.md) | Usuarios: alta Auth + profiles (solo supervisor) |
+| [04-prospectos.md](./04-prospectos.md) | Prospectos: catálogos, alta, listado, bitácora (esquema) |
 
 ## Módulos (rutas)
 
@@ -18,7 +19,7 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 - `/dashboard`
 - `/supervision` — solo `supervisor`
 - `/usuarios` — solo `supervisor` (crear y listar)
-- `/prospectos`
+- `/prospectos` — listado + alta (barra rápida y drawer)
 - `/funnel`
 - `/compromisos`
 - `/cotizaciones`
@@ -26,6 +27,7 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 - `/ventas`
 
 Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
-`GET /api/auth/me`, `GET /api/health`, `GET/POST /api/usuarios`.
+`GET /api/auth/me`, `GET /api/health`, `GET/POST /api/usuarios`,
+`GET/POST /api/prospectos`.
 
 Matriz detallada: [`docs/platform/04-roles-y-permisos.md`](../platform/04-roles-y-permisos.md).

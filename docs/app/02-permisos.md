@@ -37,5 +37,8 @@
 
 ## Fuera de alcance
 
-- Enforcement fila a fila (tablas de dominio aún no migradas).
-- Botones de acción por pantalla (stubs); se cablearán al portar cada módulo.
+- Ownership fila a fila completo (editar ficha, filtros por responsable). Ver
+  [04-prospectos.md](./04-prospectos.md): hoy la lista es «todos ven todos» y el
+  comercial puede elegir responsable en el alta — ambas cosas pendientes de
+  validar con negocio.
+- Resto de botones de acción por pantalla en stubs pendientes.

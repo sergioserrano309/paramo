@@ -6,6 +6,8 @@
 -- El bootstrap del primer supervisor (Auth + profiles) NO va aquí:
 -- usa supabase/local/ (carpeta solo local, ignorada por git).
 --
+-- Catálogos de prospectos: ver 002_catalogos_prospectos.sql
+--
 -- begin;
 --
 -- -- Ejemplo futuro (cuando exista la tabla):
