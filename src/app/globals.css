@@ -1,0 +1,24 @@
+@import "tailwindcss";
+@import "../styles/paramo-theme.css";
+
+body {
+  background: var(--paramo-bg);
+  color: var(--paramo-fg);
+  font-family: var(--font-mulish), "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-arvo), "Rockwell", Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--paramo-teal);
+  outline-offset: 2px;
+}

@@ -1,0 +1,68 @@
+/*
+  Tokens de marca tomados del as-is en pre-arquitectura/ (HTML del CRM).
+  Usar siempre utilidades Tailwind paramo-* en componentes de producto.
+*/
+
+:root {
+  --paramo-bg: #f3f4f6;
+  --paramo-surface: #ffffff;
+  --paramo-surface-2: #eef0f2;
+  --paramo-line: #e2e5e9;
+  --paramo-fg: #1f2328;
+  --paramo-muted: #646b73;
+  --paramo-brand: #8a2a66;
+  --paramo-brand-ink: #ffffff;
+  --paramo-brand-soft: #f4e4ee;
+  --paramo-teal: #54967e;
+  --paramo-teal-ink: #3b7a63;
+  --paramo-teal-soft: #e2f0ea;
+  --paramo-olive: #9e9e3f;
+  --paramo-leaf: #86ba4e;
+  --paramo-good: #3e8b52;
+  --paramo-warn: #b26a12;
+  --paramo-bad: #c0392b;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --paramo-bg: #141517;
+  --paramo-surface: #1c1d20;
+  --paramo-surface-2: #26282c;
+  --paramo-line: #34373c;
+  --paramo-fg: #eceef0;
+  --paramo-muted: #a3a8af;
+  --paramo-brand: #e28dc0;
+  --paramo-brand-ink: #1a1016;
+  --paramo-brand-soft: #3a2433;
+  --paramo-teal: #7cc4a8;
+  --paramo-teal-ink: #90d4b9;
+  --paramo-teal-soft: #1c332c;
+  --paramo-olive: #caca6c;
+  --paramo-leaf: #a8d672;
+  --paramo-good: #7ad490;
+  --paramo-warn: #f0b55c;
+  --paramo-bad: #f3836f;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paramo-bg: var(--paramo-bg);
+  --color-paramo-surface: var(--paramo-surface);
+  --color-paramo-surface-2: var(--paramo-surface-2);
+  --color-paramo-line: var(--paramo-line);
+  --color-paramo-fg: var(--paramo-fg);
+  --color-paramo-muted: var(--paramo-muted);
+  --color-paramo-brand: var(--paramo-brand);
+  --color-paramo-brand-ink: var(--paramo-brand-ink);
+  --color-paramo-brand-soft: var(--paramo-brand-soft);
+  --color-paramo-teal: var(--paramo-teal);
+  --color-paramo-teal-ink: var(--paramo-teal-ink);
+  --color-paramo-teal-soft: var(--paramo-teal-soft);
+  --color-paramo-olive: var(--paramo-olive);
+  --color-paramo-leaf: var(--paramo-leaf);
+  --color-paramo-good: var(--paramo-good);
+  --color-paramo-warn: var(--paramo-warn);
+  --color-paramo-bad: var(--paramo-bad);
+  --font-paramo-display: var(--font-arvo);
+  --font-paramo-body: var(--font-mulish);
+}
