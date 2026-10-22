@@ -145,17 +145,29 @@ export function ProspectosPanel({
   async function onQuickSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canCreate) return;
+    // As-is quickP: solo exige empresa.trim(); el resto puede ir vacío.
+    const empresa = quick.empresa.trim();
+    if (!empresa) return;
     setError(null);
     setOk(null);
     setLoading(true);
     try {
       const created = await createProspecto({
-        empresa: quick.empresa,
-        contacto: quick.contacto,
-        telefono: quick.telefono,
-        canal_codigo: quick.canal_codigo || null,
+        empresa,
+        contacto: quick.contacto.trim(),
+        telefono: quick.telefono.trim(),
+        canal_codigo: quick.canal_codigo.trim() || null,
         responsable_id: quick.responsable_id || defaultResponsableId,
         etapa_codigo: "prospecto",
+        nit: "",
+        cargo: "",
+        email: "",
+        ciudad: "",
+        fuente_codigo: null,
+        tipo_cliente_codigo: null,
+        valor_mensual_estimado: 0,
+        calificacion: 0,
+        notas: "",
       });
       setProspectos((prev) => [created, ...prev]);
       setQuick({
@@ -167,6 +179,9 @@ export function ProspectosPanel({
       });
       setOk(`${created.empresa} agregado`);
       router.refresh();
+      requestAnimationFrame(() => {
+        document.getElementById("qp-empresa")?.focus();
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo crear el prospecto.");
     } finally {
@@ -343,7 +358,6 @@ export function ProspectosPanel({
               </label>
               <select
                 id="qp-resp"
-                required
                 value={quick.responsable_id}
                 onChange={(e) =>
                   setQuick((s) => ({ ...s, responsable_id: e.target.value }))
@@ -695,7 +709,6 @@ export function ProspectosPanel({
                   </label>
                   <select
                     id="dp-resp"
-                    required
                     value={form.responsable_id}
                     onChange={(e) => setField("responsable_id", e.target.value)}
                     className={fieldClass}

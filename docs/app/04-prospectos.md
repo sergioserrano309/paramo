@@ -12,17 +12,26 @@
   - `GET /api/prospectos` — listado (ambos roles con acceso al módulo).
   - `POST /api/prospectos` — alta (`editar` **o** `asignar`, como `canCreateP`).
 - UI (`ProspectosPanel`):
-  - Barra rápida (`quickP`): empresa*, contacto, teléfono, canal, responsable.
-  - Botón «Prospecto» → drawer con formulario completo del as-is.
+  - Barra rápida (`quickP`, como el as-is): **solo empresa es obligatoria**;
+    contacto, teléfono, canal y responsable son opcionales (responsable default = yo;
+    etapa fija `prospecto`). Con solo el nombre + Agregar debe crear.
+  - Botón «Prospecto» → drawer con formulario completo del as-is (misma regla:
+    solo empresa obligatoria).
   - Listado con búsqueda local por empresa/contacto/NIT/etc.
 
 ### Campos del formulario completo (drawer)
 
-Empresa*, NIT, Contacto, Cargo, Teléfono, Correo, Ciudad, Canal, Tipo de cliente,
-Fuente, Venta mensual estimada, Etapa (solo pipeline), Calificación, Responsable, Notas.
+| Campo | Obligatorio |
+|---|---|
+| Empresa | **Sí** (único requerido, como el as-is) |
+| NIT, Contacto, Cargo, Teléfono, Correo, Ciudad | No |
+| Canal, Tipo de cliente, Fuente | No (`null` / vacío permitido) |
+| Venta mensual estimada, Calificación, Notas | No (default 0 / vacío) |
+| Etapa | No (default `prospecto`) |
+| Responsable | No (default = usuario actual) |
 
 Contacto/cargo/teléfono/email viven como **columnas** de `prospectos` (un contacto
-principal).
+principal). La API acepta `null`, `""` u omitir en opcionales (Zod no los rechaza).
 
 ## Decisiones
 
@@ -30,6 +39,7 @@ principal).
 |---|---|---|
 | Catálogos | Tablas + FK + seed | Texto libre / solo `CHECK` en app |
 | Contacto | Columnas en `prospectos` | Tabla `contactos` 1:N (futuro si hay varios) |
+| Campos obligatorios al alta | Solo `empresa` (as-is) | Exigir catálogos/contacto |
 | Duplicidad empresa | **Sin** UNIQUE | Había pedido de unicidad; se revirtió |
 | Crear | `editar` \|\| `asignar` | Solo comercial |
 | Responsable al alta | Select de usuarios activos; default = yo | Forzar siempre al creador |
@@ -38,9 +48,10 @@ principal).
 
 ### Barra rápida — ¿es necesaria?
 
-Se portó porque el as-is la usa para altas mínimas sin abrir el drawer. **Pendiente
-validar con el equipo** si aporta en operación diaria o si basta el drawer completo
-(menos superficie de UI y misma API). Mientras tanto se mantiene.
+Se portó porque el as-is la usa para altas mínimas sin abrir el drawer (empresa +
+Agregar). Comportamiento alineado: solo `empresa` obligatoria. **Pendiente validar
+con el equipo** si aporta en operación diaria o si basta el drawer completo.
+Mientras tanto se mantiene.
 
 ### Asignar responsable al crear (comercial)
 

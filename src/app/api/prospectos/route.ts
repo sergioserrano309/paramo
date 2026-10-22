@@ -19,40 +19,57 @@ import { createServiceClient } from "@/lib/supabase-server";
 const MAX_BODY_BYTES = 16_384;
 const LIST_LIMIT = 500;
 
+/** Como el as-is: solo empresa es obligatoria; null / "" / omitido → vacío o null. */
+const optionalText = (max: number) =>
+  z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((v) => (typeof v === "string" ? v.trim() : ""))
+    .pipe(z.string().max(max));
+
 const optionalCodigo = z
-  .union([z.string().trim().min(1).max(80), z.literal("")])
-  .optional()
-  .transform((v) => (v && v.length > 0 ? v : null));
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (typeof v !== "string") return null;
+    const t = v.trim();
+    return t.length > 0 ? t.slice(0, 80) : null;
+  });
+
+const optionalNonNegNumber = (max: number) =>
+  z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? 0 : v),
+    z.coerce.number().min(0).max(max),
+  );
 
 const createProspectoSchema = z.object({
   empresa: z.string().trim().min(1).max(200),
-  nit: z.string().trim().max(40).optional().default(""),
-  contacto: z.string().trim().max(120).optional().default(""),
-  cargo: z.string().trim().max(120).optional().default(""),
-  telefono: z.string().trim().max(40).optional().default(""),
-  email: z
-    .string()
-    .trim()
-    .max(254)
-    .optional()
-    .default("")
-    .refine((v) => v === "" || z.string().email().safeParse(v).success, {
-      message: "email",
-    }),
-  ciudad: z.string().trim().max(120).optional().default(""),
+  nit: optionalText(40),
+  contacto: optionalText(120),
+  cargo: optionalText(120),
+  telefono: optionalText(40),
+  email: optionalText(254).refine(
+    (v) => v === "" || z.string().email().safeParse(v).success,
+    { message: "email" },
+  ),
+  ciudad: optionalText(120),
   canal_codigo: optionalCodigo,
   tipo_cliente_codigo: optionalCodigo,
   fuente_codigo: optionalCodigo,
-  etapa_codigo: z.string().trim().min(1).max(40).optional().default("prospecto"),
-  valor_mensual_estimado: z.coerce
-    .number()
-    .min(0)
-    .max(1_000_000_000_000)
-    .optional()
-    .default(0),
-  calificacion: z.coerce.number().int().min(0).max(3).optional().default(0),
-  notas: z.string().trim().max(4_000).optional().default(""),
-  responsable_id: z.string().uuid(),
+  etapa_codigo: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((v) => {
+      if (typeof v !== "string" || !v.trim()) return "prospecto";
+      return v.trim().slice(0, 40);
+    }),
+  valor_mensual_estimado: optionalNonNegNumber(1_000_000_000_000),
+  calificacion: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? 0 : v),
+    z.coerce.number().int().min(0).max(3),
+  ),
+  notas: optionalText(4_000),
+  // As-is: d.responsable || yo. Si viene null/omitido, la API usa auth.userId.
+  responsable_id: z
+    .union([z.string().uuid(), z.null(), z.undefined()])
+    .transform((v) => (typeof v === "string" ? v : null)),
 });
 
 const CREATE_DENIED = "No se pudo crear el prospecto.";
@@ -124,12 +141,13 @@ export async function POST(request: Request) {
   }
 
   const body = parsed.data;
+  const responsableId = body.responsable_id ?? auth.userId;
   const service = createServiceClient();
 
   const { data: responsable, error: respError } = await service
     .from("profiles")
     .select("id, activo, rol")
-    .eq("id", body.responsable_id)
+    .eq("id", responsableId)
     .maybeSingle();
 
   if (respError || !responsable || !responsable.activo || !isRol(responsable.rol)) {
@@ -195,7 +213,7 @@ export async function POST(request: Request) {
       activo: true,
       etapa_desde: today,
       ultimo_contacto: today,
-      responsable_id: body.responsable_id,
+      responsable_id: responsableId,
       creado_por: auth.userId,
       actualizado_por: auth.userId,
     })
