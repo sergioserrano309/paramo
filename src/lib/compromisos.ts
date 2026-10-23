@@ -76,6 +76,7 @@ const AGENDA_LIMIT = 2000;
 export async function fetchCompromisosAgenda(
   service: SupabaseClient,
   responsableId: string | null,
+  prospectoId?: string | null,
 ): Promise<CompromisoAgendaItem[] | null> {
   let query = service
     .from("compromisos")
@@ -85,6 +86,9 @@ export async function fetchCompromisosAgenda(
 
   if (responsableId) {
     query = query.eq("responsable_id", responsableId);
+  }
+  if (prospectoId) {
+    query = query.eq("prospecto_id", prospectoId);
   }
 
   const { data, error } = await query;

@@ -30,7 +30,11 @@ Rutas bajo `src/app/(app)/` (requieren sesión; acceso por rol en Hito 2):
 
 Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
 `GET /api/auth/me`, `GET /api/health`, `GET/POST /api/usuarios`,
-`GET/POST /api/prospectos`, `PATCH /api/prospectos/[id]/etapa`,
-`POST /api/compromisos`, `PATCH/DELETE /api/compromisos/[id]`.
+`GET/POST /api/prospectos`, `PATCH/DELETE /api/prospectos/[id]`,
+`PATCH /api/prospectos/[id]/etapa`,
+`GET/POST /api/prospectos/[id]/observaciones`,
+`PATCH/DELETE /api/prospectos/[id]/observaciones/[obsId]`,
+`POST /api/compromisos`, `GET /api/compromisos?prospecto_id=`,
+`PATCH/DELETE /api/compromisos/[id]`.
 
 Matriz detallada: [`docs/platform/04-roles-y-permisos.md`](../platform/04-roles-y-permisos.md).

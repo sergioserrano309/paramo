@@ -669,6 +669,19 @@ export function FunnelPanel({
           moving={movingId === openProspecto.id}
           onClose={() => setOpenId(null)}
           onSetStage={(k) => void moveToStage(openProspecto.id, k)}
+          catalogos={catalogos}
+          prospectosAgenda={prospectos}
+          userId={userId}
+          userRol={userRol}
+          onUpdated={(next) =>
+            setProspectos((prev) =>
+              prev.map((item) => (item.id === next.id ? next : item)),
+            )
+          }
+          onDeleted={(id) => {
+            setProspectos((prev) => prev.filter((item) => item.id !== id));
+            setOpenId(null);
+          }}
         />
       ) : null}
 

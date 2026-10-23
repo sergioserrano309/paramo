@@ -1,4 +1,5 @@
 import type { Rol } from "@/config/roles";
+import type { ActividadItem } from "@/lib/actividad";
 
 export type CatalogoItem = {
   codigo: string;
@@ -43,10 +44,14 @@ export type ProspectoListItem = {
   notas: string;
   activo: boolean;
   motivo_perdida: string;
+  motivo_inactivo: string;
+  inactivo_en: string | null;
   etapa_desde: string;
   ganado_en: string | null;
+  actividad: ActividadItem[];
   responsable_id: string;
   responsable_nombre: string;
+  creado_por_nombre: string | null;
   creado_en: string;
   ultimo_contacto: string | null;
 };

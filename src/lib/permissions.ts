@@ -8,6 +8,7 @@ import { can, canAccessModule } from "@/lib/can";
 export {
   can,
   canAccessModule,
+  canAsignarResponsable,
   canCreateCompromiso,
   canCreateProspecto,
   canEditCompromiso,

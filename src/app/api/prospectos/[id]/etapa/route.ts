@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isMotivoPerdida } from "@/config/motivos-perdida";
+import { appendActividad } from "@/lib/actividad";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { todayBogota } from "@/lib/format";
@@ -83,7 +84,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: actual, error: loadError } = await service
     .from("prospectos")
-    .select("id, activo, etapa_codigo, responsable_id")
+    .select("id, activo, etapa_codigo, responsable_id, actividad")
     .eq("id", id)
     .maybeSingle();
 
@@ -122,7 +123,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: etapa, error: etapaError } = await service
     .from("etapas_funnel")
-    .select("codigo, activo")
+    .select("codigo, nombre, activo")
     .eq("codigo", nuevaEtapa)
     .maybeSingle();
 
@@ -139,11 +140,23 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   const today = todayBogota();
+  const nombreEtapa =
+    typeof etapa.nombre === "string" && etapa.nombre
+      ? etapa.nombre
+      : nuevaEtapa;
   const patch: Record<string, unknown> = {
     etapa_codigo: nuevaEtapa,
     etapa_desde: today,
     motivo_perdida: motivoPerdida,
     actualizado_por: auth.userId,
+    actividad: appendActividad(actual.actividad, {
+      f: today,
+      t: "Etapa",
+      x: `Pasó a ${nombreEtapa}${
+        nuevaEtapa === "perdido" && motivoPerdida ? ` · ${motivoPerdida}` : ""
+      }`,
+      u: auth.userId,
+    }),
   };
 
   if (nuevaEtapa === "ganado") {

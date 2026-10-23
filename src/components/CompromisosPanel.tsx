@@ -40,6 +40,7 @@ import type {
 import type {
   EtapaCatalogo,
   ProspectoListItem,
+  ProspectosCatalogos,
   ResponsableOption,
 } from "@/lib/types/prospecto";
 
@@ -48,6 +49,7 @@ type CompromisosPanelProps = {
   loadError: boolean;
   prospectos: ProspectoListItem[];
   etapas: EtapaCatalogo[];
+  catalogos: ProspectosCatalogos;
   responsables: ResponsableOption[];
   canCreate: boolean;
   userId: string;
@@ -88,6 +90,7 @@ export function CompromisosPanel({
   loadError,
   prospectos: initialProspectos,
   etapas,
+  catalogos,
   responsables,
   canCreate,
   userId,
@@ -526,6 +529,28 @@ export function CompromisosPanel({
           moving={movingId === openProspecto.id}
           onClose={() => setOpenId(null)}
           onSetStage={(k) => void moveToStage(openProspecto.id, k)}
+          catalogos={catalogos}
+          prospectosAgenda={prospectos}
+          userId={userId}
+          userRol={userRol}
+          onUpdated={(next) =>
+            setProspectos((prev) =>
+              prev.map((item) => (item.id === next.id ? next : item)),
+            )
+          }
+          onDeleted={(id) => {
+            setProspectos((prev) => prev.filter((item) => item.id !== id));
+            setCompromisos((prev) =>
+              prev.filter((item) => item.prospecto_id !== id),
+            );
+            setOpenId(null);
+          }}
+          onCompromisoCreado={(creado) => {
+            setCompromisos((prev) => {
+              if (prev.some((item) => item.id === creado.id)) return prev;
+              return [creado, ...prev];
+            });
+          }}
         />
       ) : null}
     </div>

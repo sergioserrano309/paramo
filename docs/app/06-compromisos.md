@@ -45,7 +45,7 @@ La API repite estas reglas. Ocultar el checkbox no autoriza.
 
 | Tema | Decisión | Por validar |
 |---|---|---|
-| Alcance | Solo `/compromisos`. Dashboard, ficha y Supervisión no agendan todavía | — |
+| Alcance | `/compromisos` y el botón **Agendar** de la ficha del prospecto. Dashboard y Supervisión no agendan | — |
 | Tarjetas | Dos bloques por rol (todos los comerciales / todos los supervisores), no una tarjeta por persona | **Sí.** Con varios usuarios puede hacer falta una tarjeta por persona |
 | Lectura del comercial | Solo lo suyo. No ve compromisos de supervisores ni de otros comerciales | — |
 | Quién lo hace | Lista desplegable. Default: quien abre el formulario | — |

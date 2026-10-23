@@ -9,6 +9,7 @@ import {
 } from "@/lib/permissions";
 import {
   fetchCompromisoAgendaById,
+  fetchCompromisosAgenda,
   prospectoExiste,
   responsableActivo,
 } from "@/lib/compromisos";
@@ -38,6 +39,34 @@ function clientKey(request: Request) {
     request.headers.get("x-real-ip") ||
     "unknown"
   );
+}
+
+const LIST_DENIED = "No se pudo cargar los compromisos.";
+
+/** Lista de un prospecto para la ficha. El comercial solo recibe los suyos. */
+export async function GET(request: Request) {
+  const auth = await requireApiModuleAccess("compromisos");
+  if (!isAuthContext(auth)) return auth;
+
+  if (!hasSupabaseServiceConfig()) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 503 });
+  }
+
+  const prospectoId = new URL(request.url).searchParams.get("prospecto_id");
+  if (!prospectoId || !z.string().uuid().safeParse(prospectoId).success) {
+    return NextResponse.json({ error: LIST_DENIED }, { status: 422 });
+  }
+
+  const service = createServiceClient();
+  const items = await fetchCompromisosAgenda(
+    service,
+    auth.profile.rol === "supervisor" ? null : auth.userId,
+    prospectoId,
+  );
+  if (!items) {
+    return NextResponse.json({ error: LIST_DENIED }, { status: 500 });
+  }
+  return NextResponse.json({ compromisos: items });
 }
 
 export async function POST(request: Request) {
