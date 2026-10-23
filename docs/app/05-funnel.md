@@ -41,7 +41,7 @@ Body: `{ etapa_codigo, motivo_perdida? }`. Si `etapa_codigo === 'perdido'`,
 | Bitácora / actividad | **Sin** writes al cambiar etapa | Log inmediato (queda para Supervisión / actividad) |
 | Próximo compromiso en tarjeta | Lectura de `compromisos` (pendientes) | Omitir / stub vacío |
 | Stale | Sí, con `ultimo_contacto` \|\| día de `creado_en` | Omitir alerta |
-| Drawer Abrir | Compartido con Prospectos; ver + etapa | Editar ficha / inactivar en este hito |
+| Drawer Abrir | Misma ficha que Prospectos: ver, etapa y el resto descrito en [04-prospectos.md](./04-prospectos.md) | — |
 | DnD móvil | Desactivado; → y pasos de etapa | Librería touch de drag |
 
 ### Permiso de movimiento — validar con negocio
@@ -65,7 +65,8 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 ## Novedades respecto al as-is
 
 - Persistencia Postgres/API (`service_role`), no Firestore.
-- Sin append a `actividad` ni insert en `bitacora` al cambiar etapa.
+- El cambio de etapa escribe una línea en `prospectos.actividad` (historial
+  de la ficha). No escribe `bitacora`.
 - Próximo compromiso en tarjeta cuando exista fila pendiente. El alta está en
   `/compromisos`, no en la tarjeta.
 - Drawer: acciones de módulos no desarrollados deshabilitadas (Próximamente),
@@ -96,9 +97,7 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 
 ## Fuera de alcance (siguientes hitos)
 
-- Editar datos / calificación / responsable desde el drawer.
-- Inactivar / reactivar / eliminar.
-- Alta de compromisos desde la ficha o la tarjeta del funnel (el módulo `/compromisos` ya agenda; ver [06-compromisos.md](./06-compromisos.md)).
-- Actividad, cotizaciones, productos de interés, observaciones, historial.
-- Writes a `bitacora` y timeline de actividad al cambiar etapa.
+- Alta de compromiso desde la tarjeta del funnel (sí se agenda desde la ficha).
+- Cotizaciones y productos de interés en la ficha.
+- Writes a `bitacora` (el historial de la ficha es `prospectos.actividad`).
 - Ownership de lectura (filtrar board por responsable).

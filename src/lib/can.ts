@@ -36,6 +36,15 @@ export function canEditProspecto(
   return can(rol, "editar") || responsableId === userId;
 }
 
+/** As-is canAssign en la ficha: quien edita el prospecto, o el supervisor (`asignar`). */
+export function canAsignarResponsable(
+  rol: Rol,
+  userId: string,
+  responsableId: string,
+): boolean {
+  return canEditProspecto(rol, userId, responsableId) || can(rol, "asignar");
+}
+
 /** Alta de compromiso: as-is `editar` o `asignar`. */
 export function canCreateCompromiso(rol: Rol): boolean {
   return can(rol, "editar") || can(rol, "asignar");

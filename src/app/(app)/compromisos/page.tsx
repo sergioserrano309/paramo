@@ -10,9 +10,12 @@ import {
 import { createServiceClient } from "@/lib/supabase-server";
 import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type {
+  CatalogoItem,
   EtapaCatalogo,
   ProspectoListItem,
+  ProspectosCatalogos,
   ResponsableOption,
+  TipoClienteCatalogo,
 } from "@/lib/types/prospecto";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +25,8 @@ export default async function CompromisosPage() {
   const service = createServiceClient();
   const supervisor = ctx.profile.rol === "supervisor";
 
-  const [compromisos, prospectosRes, etapasRes, profilesRes] = await Promise.all([
+  const [compromisos, prospectosRes, etapasRes, canalesRes, fuentesRes, tiposRes, profilesRes] =
+    await Promise.all([
     fetchCompromisosAgenda(service, supervisor ? null : ctx.userId),
     service
       .from("prospectos")
@@ -34,14 +38,27 @@ export default async function CompromisosPage() {
       .select("codigo, nombre, orden, probabilidad, en_pipeline")
       .eq("activo", true)
       .order("orden", { ascending: true }),
-    supervisor
-      ? service
-          .from("profiles")
-          .select("id, nombre, rol, activo")
-          .eq("activo", true)
-          .order("nombre", { ascending: true })
-          .limit(200)
-      : Promise.resolve({ data: null, error: null }),
+    service
+      .from("canales")
+      .select("codigo, nombre, orden")
+      .eq("activo", true)
+      .order("orden", { ascending: true }),
+    service
+      .from("fuentes")
+      .select("codigo, nombre, orden")
+      .eq("activo", true)
+      .order("orden", { ascending: true }),
+    service
+      .from("tipos_cliente")
+      .select("codigo, nombre, orden, descuento_pct_default")
+      .eq("activo", true)
+      .order("orden", { ascending: true }),
+    service
+      .from("profiles")
+      .select("id, nombre, rol, activo")
+      .eq("activo", true)
+      .order("nombre", { ascending: true })
+      .limit(200),
   ]);
 
   const prospectos: ProspectoListItem[] = [];
@@ -52,7 +69,7 @@ export default async function CompromisosPage() {
   }
 
   const responsables: ResponsableOption[] = [];
-  if (supervisor && profilesRes.data) {
+  if (profilesRes.data) {
     for (const row of profilesRes.data) {
       if (!isRol(row.rol)) continue;
       responsables.push({
@@ -63,7 +80,7 @@ export default async function CompromisosPage() {
     }
   }
 
-  if (supervisor && !responsables.some((r) => r.id === ctx.userId)) {
+  if (!responsables.some((r) => r.id === ctx.userId)) {
     responsables.unshift({
       id: ctx.userId,
       nombre: ctx.profile.nombre || "Tú",
@@ -78,13 +95,22 @@ export default async function CompromisosPage() {
 
   const items: CompromisoAgendaItem[] = compromisos ?? [];
 
+  const catalogos: ProspectosCatalogos = {
+    canales: (canalesRes.data ?? []) as CatalogoItem[],
+    fuentes: (fuentesRes.data ?? []) as CatalogoItem[],
+    tipos_cliente: (tiposRes.data ?? []) as TipoClienteCatalogo[],
+    etapas: (etapasRes.data ?? []) as EtapaCatalogo[],
+    responsables,
+  };
+
   return (
     <CompromisosPanel
       initialCompromisos={items}
       loadError={compromisos === null}
       prospectos={prospectos}
-      etapas={(etapasRes.data ?? []) as EtapaCatalogo[]}
-      responsables={responsables}
+      etapas={catalogos.etapas}
+      catalogos={catalogos}
+      responsables={supervisor ? responsables : []}
       canCreate={canCreateCompromiso(ctx.profile.rol)}
       userId={ctx.userId}
       userRol={ctx.profile.rol}

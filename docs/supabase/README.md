@@ -25,6 +25,7 @@ Detalle: [`.env.example`](../../.env.example).
 | `20261022153000_crear_profiles.sql` | Tabla `profiles`, RLS+revoke, trigger `actualizado_en` (sin auto-perfil al registrarse) |
 | `20261022170000_crear_prospectos_y_catalogos.sql` | Catálogos (`canales`, `fuentes`, `tipos_cliente`, `etapas_funnel`), `prospectos`, `bitacora` (esquema); RLS+revoke |
 | `20261022193000_crear_compromisos.sql` | Tabla `compromisos` (agenda); tipos en CHECK; RLS+revoke; sin seed |
+| `20261022223000_ficha_prospecto_actividad_observaciones.sql` | Columna `prospectos.actividad` y tabla `observaciones`; RLS+revoke |
 
 **Importante:** una migración en el repo no cuenta hasta aplicarla en el proyecto Supabase.
 
@@ -66,6 +67,15 @@ Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
 Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
 [docs/app/05-funnel.md](../app/05-funnel.md) (cambio de etapa).
 
+### `actividad` y `observaciones`
+
+`prospectos.actividad` es el historial de la ficha: lista jsonb
+`{ f, t, x, u }`. Empieza vacía; no reconstruye hechos anteriores.
+
+`observaciones`: texto del supervisor, estado `abierta` / `atendida`,
+respuesta del comercial. Se borra en cascada con el prospecto. RLS + revoke,
+sin políticas. La app escribe con `service_role`.
+
 ### `compromisos` (migración + escritura desde `/compromisos`)
 
 Agenda de seguimientos (as-is). Columnas clave: `titulo`, `tipo` (CHECK con
@@ -82,10 +92,11 @@ Detalle: [docs/app/06-compromisos.md](../app/06-compromisos.md).
 
 ### Inventario objetivo (aún sin migración de dominio)
 
-`cotizaciones` · `productos` · `ventas` · `ventas_meses` · `observaciones`
+`cotizaciones` · `productos` · `ventas` · `ventas_meses`
 
-(`prospectos`, `bitacora` y `compromisos` ya tienen migración. `compromisos`
-se escribe desde `/compromisos`. `bitacora` sigue sin escritura desde la app.)
+(`prospectos`, `bitacora`, `compromisos` y `observaciones` ya tienen migración.
+`actividad` es columna jsonb de `prospectos`. `bitacora` sigue sin escritura
+desde la app.)
 
 ## Carpetas
 
