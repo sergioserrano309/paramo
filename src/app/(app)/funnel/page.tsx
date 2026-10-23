@@ -1,5 +1,6 @@
 import { FunnelPanel } from "@/components/FunnelPanel";
 import { isRol } from "@/config/roles";
+import { fetchProximosPorProspecto } from "@/lib/compromisos";
 import {
   canCreateProspecto,
   requireModuleAccess,
@@ -75,6 +76,11 @@ export default async function FunnelPage() {
     }
   }
 
+  const proximosPorProspecto = await fetchProximosPorProspecto(
+    service,
+    prospectos.map((p) => p.id),
+  );
+
   const responsables: ResponsableOption[] = [];
   if (!profilesRes.error && profilesRes.data) {
     for (const row of profilesRes.data) {
@@ -114,6 +120,7 @@ export default async function FunnelPage() {
       defaultResponsableId={userId}
       userId={userId}
       userRol={userRol}
+      proximosPorProspecto={proximosPorProspecto}
     />
   );
 }

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NavIcon } from "@/components/NavIcon";
 import type { NavItem } from "@/config/navigation";
+import { cn } from "@/lib/cn";
 
 type AppNavProps = {
   items: NavItem[];
@@ -23,13 +25,15 @@ export function AppNav({ items }: AppNavProps) {
             key={item.key}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={
+            className={cn(
+              "inline-flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm md:w-full",
               active
-                ? "rounded-lg bg-paramo-brand-soft px-2.5 py-2 text-sm font-extrabold text-paramo-brand"
-                : "rounded-lg px-2.5 py-2 text-sm font-semibold text-paramo-muted hover:bg-paramo-surface-2 hover:text-paramo-fg"
-            }
+                ? "bg-paramo-brand-soft font-extrabold text-paramo-brand"
+                : "font-semibold text-paramo-muted hover:bg-paramo-surface-2 hover:text-paramo-fg",
+            )}
           >
-            {item.label}
+            <NavIcon name={item.key} />
+            <span>{item.label}</span>
           </Link>
         );
       })}

@@ -41,6 +41,14 @@
   Usado al mover etapa en el funnel. El supervisor sin ser responsable no mueve.
   **Pendiente validar con negocio** — detalle en [05-funnel.md](./05-funnel.md).
 
+## Novedades posteriores (Compromisos)
+
+- `canCreateCompromiso`: `editar` o `asignar`.
+- `puedeVerCompromiso`: el supervisor ve todos; el comercial solo si
+  `responsable_id` es él.
+- `canToggleCompromiso` / `canEditCompromiso`: as-is `canToggleC` / `canEditC`,
+  encima de esa visibilidad. Detalle en [06-compromisos.md](./06-compromisos.md).
+
 ## Fuera de alcance
 
 - Ownership de lectura (filtros por responsable en listados). Ver

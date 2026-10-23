@@ -24,6 +24,7 @@ Detalle: [`.env.example`](../../.env.example).
 |---|---|
 | `20261022153000_crear_profiles.sql` | Tabla `profiles`, RLS+revoke, trigger `actualizado_en` (sin auto-perfil al registrarse) |
 | `20261022170000_crear_prospectos_y_catalogos.sql` | Catálogos (`canales`, `fuentes`, `tipos_cliente`, `etapas_funnel`), `prospectos`, `bitacora` (esquema); RLS+revoke |
+| `20261022193000_crear_compromisos.sql` | Tabla `compromisos` (agenda); tipos en CHECK; RLS+revoke; sin seed |
 
 **Importante:** una migración en el repo no cuenta hasta aplicarla en el proyecto Supabase.
 
@@ -65,12 +66,26 @@ Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
 Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
 [docs/app/05-funnel.md](../app/05-funnel.md) (cambio de etapa).
 
+### `compromisos` (migración + escritura desde `/compromisos`)
+
+Agenda de seguimientos (as-is). Columnas clave: `titulo`, `tipo` (CHECK con
+Llamada, Visita, WhatsApp, Correo, Enviar muestra, Degustación, Enviar
+cotización, Seguimiento, Cobro, Otro), `fecha`, `prospecto_id` (nullable),
+`hecho` / `hecho_en`, `asignado`, `responsable_id`, `creado_por`.
+
+Índice parcial para «próximo compromiso» por prospecto. La app lee pendientes
+para listado Prospectos y tarjetas Funnel, y escribe desde `/compromisos`
+(`POST/PATCH/DELETE`). Sin seed. Al marcar cumplido con prospecto, la API
+pone `prospectos.ultimo_contacto` en el día de Bogotá.
+
+Detalle: [docs/app/06-compromisos.md](../app/06-compromisos.md).
+
 ### Inventario objetivo (aún sin migración de dominio)
 
-`compromisos` · `cotizaciones` · `productos` · `ventas` · `ventas_meses` ·
-`observaciones`
+`cotizaciones` · `productos` · `ventas` · `ventas_meses` · `observaciones`
 
-(`prospectos` y `bitacora` ya tienen migración; `bitacora` sin escritura aún.)
+(`prospectos`, `bitacora` y `compromisos` ya tienen migración. `compromisos`
+se escribe desde `/compromisos`. `bitacora` sigue sin escritura desde la app.)
 
 ## Carpetas
 

@@ -35,3 +35,52 @@ export function canEditProspecto(
 ): boolean {
   return can(rol, "editar") || responsableId === userId;
 }
+
+/** Alta de compromiso: as-is `editar` o `asignar`. */
+export function canCreateCompromiso(rol: Rol): boolean {
+  return can(rol, "editar") || can(rol, "asignar");
+}
+
+/**
+ * Lectura de un compromiso.
+ * Supervisor ve todos. Comercial solo los que tiene a su cargo
+ * (el selector de otro comercial del as-is no se replica).
+ */
+export function puedeVerCompromiso(
+  rol: Rol,
+  userId: string,
+  responsableId: string | null,
+): boolean {
+  if (rol === "supervisor") return true;
+  return responsableId === userId;
+}
+
+export type CompromisoAccess = {
+  creadoPor: string | null;
+  responsableId: string | null;
+  responsableRol: Rol | null;
+};
+
+/** As-is canToggleC: el supervisor solo marca lo suyo; el comercial, lo que no es de un supervisor. */
+export function canToggleCompromiso(
+  rol: Rol,
+  userId: string,
+  c: CompromisoAccess,
+): boolean {
+  if (!puedeVerCompromiso(rol, userId, c.responsableId)) return false;
+  if (rol === "supervisor") return c.responsableId === userId;
+  return c.responsableRol !== "supervisor";
+}
+
+/** As-is canEditC: el supervisor edita lo que creó o lo que tiene a su cargo. */
+export function canEditCompromiso(
+  rol: Rol,
+  userId: string,
+  c: CompromisoAccess,
+): boolean {
+  if (!puedeVerCompromiso(rol, userId, c.responsableId)) return false;
+  if (rol === "supervisor") {
+    return c.creadoPor === userId || c.responsableId === userId;
+  }
+  return c.responsableRol !== "supervisor";
+}

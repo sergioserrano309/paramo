@@ -31,6 +31,19 @@ export function todayBogota(): string {
   });
 }
 
+/** Fecha de compromiso: calendario real entre 2000 y 2100. */
+export function isFechaCompromiso(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  if (y < 2000 || y > 2100) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
 /** Día local Bogotá a partir de un ISO/timestamptz. */
 export function localDayBogota(isoOrDate: string): string {
   return new Date(isoOrDate).toLocaleDateString("en-CA", {
@@ -50,4 +63,80 @@ export function initials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+const MES_CORTO = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+] as const;
+
+/** Suma días a una fecha YYYY-MM-DD (mediodía local, como addDays del as-is). */
+export function addDaysYmd(ymd: string, n: number): string {
+  const d = new Date(`${ymd}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Fecha corta dd/mm/yyyy (drawer) a partir de ISO o YYYY-MM-DD. */
+export function formatDateShort(isoOrDate: string): string {
+  const d = isoOrDate.includes("T")
+    ? localDayBogota(isoOrDate)
+    : isoOrDate;
+  const [y, m, day] = d.split("-");
+  if (!y || !m || !day) return d;
+  return `${day}/${m}/${y}`;
+}
+
+/** Fecha compacta del as-is fDate: «22 oct» / «22 oct 25». */
+export function formatDateCompact(ymd: string): string {
+  const [y, m, day] = ymd.split("-");
+  if (!y || !m || !day) return ymd;
+  const mes = MES_CORTO[Number(m) - 1] ?? m;
+  const yearNow = todayBogota().slice(0, 4);
+  const suffix = y !== yearNow ? ` ${y.slice(2)}` : "";
+  return `${Number(day)} ${mes}${suffix}`;
+}
+
+/** Etiqueta de compromiso: Hoy / Mañana / Ayer / fDate (as-is dateTxt). */
+export function formatCompromisoFecha(fecha: string, hoy = todayBogota()): string {
+  if (fecha === hoy) return "Hoy";
+  if (fecha === addDaysYmd(hoy, 1)) return "Mañana";
+  if (fecha === addDaysYmd(hoy, -1)) return "Ayer";
+  return formatDateCompact(fecha);
+}
+
+/** Clase semántica de fecha de compromiso (as-is dateClass). */
+export function compromisoFechaTone(
+  fecha: string,
+  hoy = todayBogota(),
+): "late" | "today" | "ok" {
+  if (fecha < hoy) return "late";
+  if (fecha === hoy) return "today";
+  return "ok";
+}
+
+/** Último contacto relativo: hoy / hace N d (as-is listado). */
+export function formatUltimoContacto(
+  ultimoContacto: string | null,
+  creadoEn: string,
+  hoy = todayBogota(),
+): { label: string; stale: boolean; days: number | null } {
+  const lt = ultimoContacto || localDayBogota(creadoEn);
+  if (!lt) return { label: "—", stale: false, days: null };
+  const dd = daysBetween(lt, hoy);
+  const label = dd === 0 ? "hoy" : `hace ${dd} d`;
+  return { label, stale: false, days: dd };
 }

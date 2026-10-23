@@ -1,13 +1,14 @@
-# Funnel — tablero por etapas (Hito 4)
+# Funnel — tablero por etapas (Hito 4 + próximo compromiso)
 
 ## Desarrollado
 
 - Módulo `/funnel` operativo (deja de ser placeholder).
 - Tablero kanban con las 7 etapas de `etapas_funnel` (incluye Ganado y Perdido).
 - Solo prospectos **activos** (`vivos()` del as-is).
-- Tarjeta: empresa, avatar del responsable, ★ calificación, canal, valor/mes,
-  alerta stale (≥14 días sin contacto vía `ultimo_contacto` o `creado_en`),
-  **Abrir** y **→** (avanzar una etapa en columnas `en_pipeline`).
+- Tarjeta: empresa, avatar del responsable, ★ calificación, canal,
+  **próximo compromiso** (fecha + título si hay pendiente en `compromisos`),
+  valor/mes, alerta stale (≥14 días sin contacto vía `ultimo_contacto` o
+  `creado_en`), **Abrir** y **→** (avanzar una etapa en columnas `en_pipeline`).
 - Movimiento de etapa:
   - Desktop (`pointer: fine`): drag & drop entre columnas + botón →.
   - Al arrastrar cerca del borde izquierdo/derecho del tablero, el board hace
@@ -19,9 +20,9 @@
   `etapa_desde`, `motivo_perdida` / `ganado_en`.
 - Botón **+ Prospecto** (y Agregar en columna Prospecto) → drawer de alta (mismo
   POST `/api/prospectos` que el módulo Prospectos). Sin barra rápida en funnel.
-- Drawer **Abrir**: layout alineado al as-is; en este hito solo **ver datos** +
-  **cambiar etapa**. Secciones de otros módulos y ediciones de ficha:
-  visibles deshabilitadas con etiqueta **Próximamente**.
+- Drawer **Abrir**: componente compartido `ProspectoDetalleDrawer` (mismo que el
+  click en el listado de Prospectos). Este hito: **ver datos** + **cambiar etapa**.
+  Secciones de otros módulos: **Próximamente**.
 
 ### API
 
@@ -38,9 +39,9 @@ Body: `{ etapa_codigo, motivo_perdida? }`. Si `etapa_codigo === 'perdido'`,
 |---|---|---|
 | Quién mueve | As-is `canEditP`: `editar` **o** soy el responsable | Supervisor con `asignar` mueve todo (ver validación abajo) |
 | Bitácora / actividad | **Sin** writes al cambiar etapa | Log inmediato (queda para Supervisión / actividad) |
-| Próximo compromiso en tarjeta | Omitido (módulo compromisos después) | Mostrar stub vacío |
+| Próximo compromiso en tarjeta | Lectura de `compromisos` (pendientes) | Omitir / stub vacío |
 | Stale | Sí, con `ultimo_contacto` \|\| día de `creado_en` | Omitir alerta |
-| Drawer Abrir | Ver + cambiar etapa; resto Próximamente | Editar ficha / inactivar en este hito |
+| Drawer Abrir | Compartido con Prospectos; ver + etapa | Editar ficha / inactivar en este hito |
 | DnD móvil | Desactivado; → y pasos de etapa | Librería touch de drag |
 
 ### Permiso de movimiento — validar con negocio
@@ -53,8 +54,7 @@ Se replicó el as-is (`canEditP`):
 
 **Necesario validar:** ¿el supervisor debería poder reordenar el funnel de toda
 la cartera (p. ej. vía `asignar`), o se mantiene esta regla? Documentar el
-veredicto cuando se decida. Helper: `canEditProspecto` en
-`src/lib/permissions.ts`.
+veredicto cuando se decida. Helper: `canEditProspecto` en `src/lib/can.ts`.
 
 ### Visibilidad
 
@@ -66,13 +66,14 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 
 - Persistencia Postgres/API (`service_role`), no Firestore.
 - Sin append a `actividad` ni insert en `bitacora` al cambiar etapa.
-- Sin “próximo compromiso” en la tarjeta.
+- Próximo compromiso en tarjeta cuando exista fila pendiente. El alta está en
+  `/compromisos`, no en la tarjeta.
 - Drawer: acciones de módulos no desarrollados deshabilitadas (Próximamente),
   no omitidas del layout.
 
 ## Cómo probar / operar
 
-1. Migración + seed de catálogos ya aplicados (etapas en `etapas_funnel`).
+1. Migraciones de prospectos/catálogos y `compromisos` aplicadas; seed de catálogos.
 2. Tener prospectos activos (crear desde `/prospectos` o `+ Prospecto` en funnel).
 3. Login `comercial` → `/funnel`: ver columnas, arrastrar (desktop), →, Abrir.
 4. Pasar a Perdido: elegir motivo; comprobar `motivo_perdida` y columna.
@@ -80,21 +81,24 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 6. Login `supervisor` (sin ser responsable): Abrir en lectura; no arrastra ni →
    salvo que sea responsable de esa fila.
 7. Móvil (~360px): scroll horizontal del board; mover con → o pasos del drawer.
+8. Con filas en `compromisos` (hecho=false): la tarjeta muestra fecha + título.
 
 ## Archivos clave
 
 - `src/app/(app)/funnel/page.tsx`
 - `src/components/FunnelPanel.tsx`
+- `src/components/ProspectoDetalleDrawer.tsx`
+- `src/lib/compromisos.ts`
 - `src/app/api/prospectos/[id]/etapa/route.ts`
 - `src/config/funnel.ts`, `src/config/motivos-perdida.ts`
-- `src/lib/format.ts`, `src/lib/permissions.ts` (`canEditProspecto`)
+- `src/lib/format.ts`, `src/lib/can.ts` (`canEditProspecto`)
 - Tokens de columna: `src/styles/paramo-theme.css` (`--paramo-stage-*`, `--paramo-rasp`)
 
 ## Fuera de alcance (siguientes hitos)
 
 - Editar datos / calificación / responsable desde el drawer.
 - Inactivar / reactivar / eliminar.
-- Actividad, compromisos, cotizaciones, productos de interés, observaciones,
-  historial (habilitar cuando existan esos módulos).
+- Alta de compromisos desde la ficha o la tarjeta del funnel (el módulo `/compromisos` ya agenda; ver [06-compromisos.md](./06-compromisos.md)).
+- Actividad, cotizaciones, productos de interés, observaciones, historial.
 - Writes a `bitacora` y timeline de actividad al cambiar etapa.
 - Ownership de lectura (filtrar board por responsable).
