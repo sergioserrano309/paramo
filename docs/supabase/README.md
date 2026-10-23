@@ -66,25 +66,26 @@ Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
 Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
 [docs/app/05-funnel.md](../app/05-funnel.md) (cambio de etapa).
 
-### `compromisos` (migración; sin UI de alta aún)
+### `compromisos` (migración + escritura desde `/compromisos`)
 
 Agenda de seguimientos (as-is). Columnas clave: `titulo`, `tipo` (CHECK con
 Llamada, Visita, WhatsApp, Correo, Enviar muestra, Degustación, Enviar
 cotización, Seguimiento, Cobro, Otro), `fecha`, `prospecto_id` (nullable),
 `hecho` / `hecho_en`, `asignado`, `responsable_id`, `creado_por`.
 
-Índice parcial para «próximo compromiso» por prospecto. La app solo **lee**
-pendientes para listado Prospectos y tarjetas Funnel; `/compromisos` sigue
-placeholder. Sin seed.
+Índice parcial para «próximo compromiso» por prospecto. La app lee pendientes
+para listado Prospectos y tarjetas Funnel, y escribe desde `/compromisos`
+(`POST/PATCH/DELETE`). Sin seed. Al marcar cumplido con prospecto, la API
+pone `prospectos.ultimo_contacto` en el día de Bogotá.
 
-Detalle: [docs/app/04-prospectos.md](../app/04-prospectos.md).
+Detalle: [docs/app/06-compromisos.md](../app/06-compromisos.md).
 
 ### Inventario objetivo (aún sin migración de dominio)
 
 `cotizaciones` · `productos` · `ventas` · `ventas_meses` · `observaciones`
 
-(`prospectos`, `bitacora` y `compromisos` ya tienen migración; `bitacora` y
-`compromisos` sin escritura desde la app aún.)
+(`prospectos`, `bitacora` y `compromisos` ya tienen migración. `compromisos`
+se escribe desde `/compromisos`. `bitacora` sigue sin escritura desde la app.)
 
 ## Carpetas
 

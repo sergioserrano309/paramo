@@ -66,8 +66,8 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 
 - Persistencia Postgres/API (`service_role`), no Firestore.
 - Sin append a `actividad` ni insert en `bitacora` al cambiar etapa.
-- Próximo compromiso en tarjeta cuando exista fila pendiente; sin UI de alta aún
-  (suele verse vacío).
+- Próximo compromiso en tarjeta cuando exista fila pendiente. El alta está en
+  `/compromisos`, no en la tarjeta.
 - Drawer: acciones de módulos no desarrollados deshabilitadas (Próximamente),
   no omitidas del layout.
 
@@ -98,7 +98,7 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 
 - Editar datos / calificación / responsable desde el drawer.
 - Inactivar / reactivar / eliminar.
-- Alta de compromisos desde la ficha o módulo `/compromisos`.
+- Alta de compromisos desde la ficha o la tarjeta del funnel (el módulo `/compromisos` ya agenda; ver [06-compromisos.md](./06-compromisos.md)).
 - Actividad, cotizaciones, productos de interés, observaciones, historial.
 - Writes a `bitacora` y timeline de actividad al cambiar etapa.
 - Ownership de lectura (filtrar board por responsable).

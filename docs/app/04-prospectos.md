@@ -6,8 +6,8 @@
 - Migración `20261022170000_crear_prospectos_y_catalogos.sql`:
   - Catálogos: `canales`, `fuentes`, `tipos_cliente`, `etapas_funnel`.
   - Tabla `prospectos` + `bitacora` (esquema; sin escritura en alta).
-- Migración `20261022193000_crear_compromisos.sql`: tabla `compromisos`
-  (esquema; sin seed ni UI de alta). Tipos en `CHECK` alineados al as-is.
+- Migración `20261022193000_crear_compromisos.sql`: tabla `compromisos`.
+  Tipos en `CHECK` alineados al as-is. Alta y agenda: [06-compromisos.md](./06-compromisos.md).
 - Seed `supabase/seed/002_catalogos_prospectos.sql`.
 - API:
   - `GET /api/prospectos` — listado.
@@ -29,8 +29,7 @@
   - Móvil: cards compactas; desktop: tabla.
   - Click en fila / card → mismo drawer de detalle que **Abrir** en Funnel
     (`ProspectoDetalleDrawer`: ver + cambiar etapa; resto Próximamente).
-  - Próximo compromiso: lee pendientes de `compromisos` (hoy vacío →
-    «Sin compromiso» hasta el módulo Compromisos).
+  - Próximo compromiso: lee pendientes de `compromisos`. Sin filas: «Sin compromiso».
 
 ### Campos del formulario completo (drawer de alta)
 
@@ -55,7 +54,7 @@
 | Listado UI | Paridad visual as-is | Mantener columnas mínimas del hito 3 |
 | Filtro etapa default | Todas las etapas | «En gestión» (as-is default) |
 | Filtro calificación | Igualdad exacta 0–3 | Umbral ≥ N (as-is) |
-| Compromisos | Tabla + lectura de próximo; sin alta UI | Stub permanente / seed mock |
+| Compromisos | Tabla + lectura de próximo. Alta en `/compromisos` | Stub permanente / seed mock |
 | Click fila | Drawer compartido con Funnel | Solo navegación / sin acción |
 | Bitácora | Tabla creada; **sin** insert al crear aún | Log inmediato |
 | Visibilidad lista | Ambos roles ven **todos** | Filtrar por responsable (pendiente) |
@@ -65,7 +64,7 @@
 - Badge de observaciones abiertas en la columna Empresa.
 - Inactivar / reactivar desde listado o ficha.
 - Cambiar calificación con click en estrellas.
-- UI y API de alta/edición de compromisos (`/compromisos` sigue placeholder).
+- Compromisos dentro de la ficha (sigue «Próximamente»). La agenda está en `/compromisos`.
 - Ownership fila a fila (comercial solo ve los suyos) — validar con negocio.
 
 ### Barra rápida — ¿es necesaria?
@@ -95,7 +94,7 @@ Se replicó el as-is: el comercial puede elegir responsable en el alta.
 3. Login → `/prospectos`: ver columnas, pills, avatar+rol, filtros.
 4. Click en una fila → drawer de detalle; cambiar etapa si `canEditProspecto`.
 5. Alta rápida / completa como antes.
-6. Sin filas en `compromisos`: columna «Sin compromiso».
+6. Sin pendientes en `compromisos`: columna «Sin compromiso». Con filas, fecha y título.
 7. Móvil (~360px): cards en lugar de tabla.
 
 ## Archivos clave

@@ -31,6 +31,19 @@ export function todayBogota(): string {
   });
 }
 
+/** Fecha de compromiso: calendario real entre 2000 y 2100. */
+export function isFechaCompromiso(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  if (y < 2000 || y > 2100) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
 /** Día local Bogotá a partir de un ISO/timestamptz. */
 export function localDayBogota(isoOrDate: string): string {
   return new Date(isoOrDate).toLocaleDateString("en-CA", {
