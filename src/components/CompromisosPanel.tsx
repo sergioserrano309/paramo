@@ -65,6 +65,9 @@ export function CompromisosPanel({
   const titleId = useId();
   const esSupervisor = rol === "supervisor";
   const hoy = todayBogota();
+  // As-is vendorId: a quién se asigna por defecto cuando el supervisor crea una tarea.
+  // Debe declararse antes de los `useState`: el estado inicial del formulario lo usa.
+  const vendedorDefault = personas.find((p) => p.rol !== "supervisor")?.id ?? userId;
 
   const [compromisos, setCompromisos] = useState(initialCompromisos);
   const [filtro, setFiltro] = useState<Filtro>("pendientes");
@@ -100,10 +103,6 @@ export function CompromisosPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [abierto]);
-
-  /** As-is vendorId: a quién se asigna por defecto cuando el supervisor crea una tarea. */
-  const vendedorDefault =
-    personas.find((p) => p.rol !== "supervisor")?.id ?? userId;
 
   function formVacio(): FormState {
     return {
