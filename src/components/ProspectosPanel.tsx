@@ -2,7 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent } from "react";
-import { ROL_LABEL } from "@/config/roles";
+import { ProspectoFicha } from "@/components/ProspectoFicha";
+import { STALE_DAYS } from "@/config/funnel";
+import { CALIF_TXT } from "@/config/prospectos";
+import { ROL_LABEL, type Rol } from "@/config/roles";
+import { textoFecha } from "@/lib/fechas";
+import {
+  daysBetween,
+  formatMoneyShort,
+  initials,
+  localDayBogota,
+  todayBogota,
+} from "@/lib/format";
+import { norm } from "@/lib/texto";
 import type {
   ProspectoListItem,
   ProspectosCatalogos,
@@ -13,14 +25,21 @@ type ProspectosPanelProps = {
   catalogos: ProspectosCatalogos;
   canCreate: boolean;
   defaultResponsableId: string;
+  userId: string;
+  userRol: Rol;
+  /** Cambia con cada pulsación de «N» o enlace `?nuevo=…`; si no está vacío, abre el alta. */
+  nuevoToken: string;
+  abrirInicial: string;
 };
 
-const CALIF_TXT = [
-  "Sin calificar",
-  "Potencial bajo",
-  "Potencial medio",
-  "Potencial alto",
-] as const;
+type Filtros = {
+  q: string;
+  /** "activos" = en gestión; "" = todas; "inactivos"; o el código de una etapa. */
+  etapa: string;
+  canal: string;
+  resp: string;
+  calif: string;
+};
 
 type FormState = {
   empresa: string;
@@ -60,15 +79,6 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
   };
 }
 
-function formatCOP(n: number) {
-  if (!n) return "—";
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
 function stars(n: number) {
   const v = Math.max(0, Math.min(3, n || 0));
   return "★".repeat(v) + "☆".repeat(3 - v);
@@ -83,6 +93,10 @@ export function ProspectosPanel({
   catalogos,
   canCreate,
   defaultResponsableId,
+  userId,
+  userRol,
+  nuevoToken,
+  abrirInicial,
 }: ProspectosPanelProps) {
   const router = useRouter();
   const titleId = useId();
@@ -107,11 +121,26 @@ export function ProspectosPanel({
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [q, setQ] = useState("");
+  const [filtros, setFiltros] = useState<Filtros>({
+    q: "",
+    etapa: "activos",
+    canal: "",
+    resp: "",
+    calif: "",
+  });
+  const [openId, setOpenId] = useState<string | null>(abrirInicial || null);
 
   useEffect(() => {
     setProspectos(initialProspectos);
   }, [initialProspectos]);
+
+  // Atajo «N» (o enlace con `?nuevo=…`): abre el alta completa.
+  useEffect(() => {
+    if (nuevoToken && canCreate) {
+      setOpenId(null);
+      setDrawerOpen(true);
+    }
+  }, [nuevoToken, canCreate]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -227,20 +256,48 @@ export function ProspectosPanel({
     }
   }
 
-  const filtered = prospectos.filter((p) => {
-    if (!q.trim()) return true;
-    const hay = [
-      p.empresa,
-      p.contacto,
-      p.ciudad,
-      p.telefono,
-      p.email,
-      p.nit,
-    ]
-      .join(" ")
-      .toLowerCase();
-    return hay.includes(q.trim().toLowerCase());
-  });
+  const etapasOrden = new Map(catalogos.etapas.map((e) => [e.codigo, e.orden]));
+  const enPipeline = new Set(catalogos.etapas.filter((e) => e.en_pipeline).map((e) => e.codigo));
+  const hoy = todayBogota();
+  const inactivos = prospectos.filter((p) => !p.activo).length;
+
+  // As-is vProspectos: filtros, y orden por calificación, etapa y valor.
+  const filtered = prospectos
+    .filter((p) => {
+      const f = filtros;
+      if (f.etapa === "inactivos") {
+        if (p.activo) return false;
+      } else {
+        if (!p.activo) return false;
+        if (f.etapa === "activos") {
+          if (!enPipeline.has(p.etapa_codigo)) return false;
+        } else if (f.etapa && p.etapa_codigo !== f.etapa) return false;
+      }
+      if (f.canal && p.canal_codigo !== f.canal) return false;
+      if (f.resp && p.responsable_id !== f.resp) return false;
+      if (f.calif && p.calificacion < Number(f.calif)) return false;
+      if (f.q.trim()) {
+        const hay = norm(
+          [p.empresa, p.contacto, p.ciudad, p.telefono, p.email, p.nit].join(" "),
+        );
+        if (!hay.includes(norm(f.q))) return false;
+      }
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        b.calificacion - a.calificacion ||
+        (etapasOrden.get(b.etapa_codigo) ?? 0) - (etapasOrden.get(a.etapa_codigo) ?? 0) ||
+        b.valor_mensual_estimado - a.valor_mensual_estimado,
+    );
+
+  function ultimoContacto(p: ProspectoListItem): string {
+    return p.ultimo_contacto ?? localDayBogota(p.creado_en);
+  }
+
+  function actualizarEnLista(p: ProspectoListItem) {
+    setProspectos((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+  }
 
   return (
     <div className="space-y-4">
@@ -385,12 +442,66 @@ export function ProspectosPanel({
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={filtros.q}
+          onChange={(e) => setFiltros((f) => ({ ...f, q: e.target.value }))}
           placeholder="Buscar empresa, contacto, NIT…"
-          className={`${fieldClass} max-w-md flex-1`}
+          className={`${fieldClass} min-w-[200px] max-w-md flex-1`}
           aria-label="Buscar prospectos"
         />
+        <select
+          aria-label="Etapa"
+          value={filtros.etapa}
+          onChange={(e) => setFiltros((f) => ({ ...f, etapa: e.target.value }))}
+          className={`${fieldClass} w-auto`}
+        >
+          <option value="activos">En gestión</option>
+          <option value="">Todas las etapas</option>
+          {[...catalogos.etapas]
+            .sort((a, b) => a.orden - b.orden)
+            .map((e) => (
+              <option key={e.codigo} value={e.codigo}>
+                {e.nombre}
+              </option>
+            ))}
+          <option value="inactivos">Inactivos ({inactivos})</option>
+        </select>
+        <select
+          aria-label="Canal"
+          value={filtros.canal}
+          onChange={(e) => setFiltros((f) => ({ ...f, canal: e.target.value }))}
+          className={`${fieldClass} w-auto`}
+        >
+          <option value="">Todos los canales</option>
+          {catalogos.canales.map((c) => (
+            <option key={c.codigo} value={c.codigo}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Responsable"
+          value={filtros.resp}
+          onChange={(e) => setFiltros((f) => ({ ...f, resp: e.target.value }))}
+          className={`${fieldClass} w-auto`}
+        >
+          <option value="">Todos los responsables</option>
+          {catalogos.responsables.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.nombre}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Calificación"
+          value={filtros.calif}
+          onChange={(e) => setFiltros((f) => ({ ...f, calif: e.target.value }))}
+          className={`${fieldClass} w-auto`}
+        >
+          <option value="">Cualquier calificación</option>
+          <option value="3">★★★ Potencial alto</option>
+          <option value="2">★★ o más</option>
+          <option value="1">★ o más</option>
+        </select>
         <span className="text-sm text-paramo-muted">
           {filtered.length} {filtered.length === 1 ? "registro" : "registros"}
         </span>
@@ -405,68 +516,168 @@ export function ProspectosPanel({
           </h3>
           <p className="mt-1 text-sm text-paramo-muted">
             {prospectos.length
-              ? "Cambia la búsqueda."
+              ? "Cambia la búsqueda o los filtros."
               : canCreate
                 ? "Escribe el nombre de la empresa arriba y presiona Agregar, o usa Prospecto."
                 : "El comercial aún no ha registrado prospectos."}
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-[10px] border border-paramo-line bg-paramo-surface">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-paramo-line text-[11.5px] font-bold uppercase tracking-wide text-paramo-muted">
-                <th className="px-3 py-2 font-bold">Empresa</th>
-                <th className="px-3 py-2 font-bold">Calif.</th>
-                <th className="px-3 py-2 font-bold">Etapa</th>
-                <th className="px-3 py-2 font-bold">Responsable</th>
-                <th className="px-3 py-2 text-right font-bold">Venta mens. est.</th>
-                <th className="px-3 py-2 font-bold">Canal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <tr
-                  key={p.id}
-                  className={`border-b border-paramo-line last:border-b-0 ${
-                    p.activo ? "" : "opacity-60"
-                  }`}
-                >
-                  <td className="px-3 py-3">
-                    <div className="font-medium text-paramo-fg">
-                      {p.empresa}
-                      {!p.activo ? (
-                        <span className="ml-2 text-xs text-paramo-muted">
-                          Inactivo
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="text-xs text-paramo-muted">
-                      {[p.contacto, p.ciudad].filter(Boolean).join(" · ") || "—"}
-                    </div>
-                  </td>
-                  <td
-                    className="px-3 py-3 text-paramo-olive"
-                    title={CALIF_TXT[p.calificacion] ?? CALIF_TXT[0]}
-                  >
-                    {stars(p.calificacion)}
-                  </td>
-                  <td className="px-3 py-3 text-paramo-fg">{p.etapa_nombre}</td>
-                  <td className="px-3 py-3 text-paramo-fg">
-                    {p.responsable_nombre}
-                  </td>
-                  <td className="px-3 py-3 text-right text-paramo-fg">
-                    {formatCOP(p.valor_mensual_estimado)}
-                  </td>
-                  <td className="px-3 py-3 text-paramo-muted">
-                    {p.canal_nombre ?? "—"}
-                  </td>
+        <>
+          <div className="hidden overflow-x-auto rounded-[10px] border border-paramo-line bg-paramo-surface md:block">
+            <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-paramo-line text-[11.5px] font-bold uppercase tracking-wide text-paramo-muted">
+                  <th className="px-3 py-2 font-bold">Empresa</th>
+                  <th className="px-3 py-2 font-bold">Calif.</th>
+                  <th className="px-3 py-2 font-bold">Etapa</th>
+                  <th className="px-3 py-2 font-bold">Responsable</th>
+                  <th className="px-3 py-2 text-right font-bold">Venta mensual est.</th>
+                  <th className="px-3 py-2 font-bold">Próximo compromiso</th>
+                  <th className="px-3 py-2 text-right font-bold">Último contacto</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map((p) => {
+                  const dd = daysBetween(ultimoContacto(p), hoy);
+                  const stale = dd >= STALE_DAYS && enPipeline.has(p.etapa_codigo) && p.activo;
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`cursor-pointer border-b border-paramo-line last:border-b-0 hover:bg-paramo-surface-2 ${
+                        p.activo ? "" : "opacity-60"
+                      }`}
+                      onClick={() => setOpenId(p.id)}
+                    >
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          className="text-left font-medium text-paramo-fg focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenId(p.id);
+                          }}
+                        >
+                          {p.empresa}
+                        </button>
+                        {p.observaciones_abiertas ? (
+                          <span
+                            title="Observaciones abiertas"
+                            className="ml-2 rounded-full bg-paramo-brand-soft px-2 py-0.5 text-[10px] font-bold text-paramo-brand"
+                          >
+                            {p.observaciones_abiertas}
+                          </span>
+                        ) : null}
+                        {!p.activo ? (
+                          <span className="ml-2 text-xs text-paramo-muted">Inactivo</span>
+                        ) : null}
+                        <div className="text-xs text-paramo-muted">
+                          {[p.contacto, p.ciudad].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                      </td>
+                      <td
+                        className="px-3 py-3 text-paramo-olive"
+                        title={CALIF_TXT[p.calificacion] ?? CALIF_TXT[0]}
+                      >
+                        {stars(p.calificacion)}
+                      </td>
+                      <td className="px-3 py-3 text-paramo-fg">{p.etapa_nombre}</td>
+                      <td className="px-3 py-3 text-paramo-fg">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            aria-hidden="true"
+                            className="inline-flex size-5 items-center justify-center rounded-full bg-paramo-teal text-[9px] font-bold text-paramo-brand-ink"
+                          >
+                            {initials(p.responsable_nombre)}
+                          </span>
+                          {p.responsable_nombre}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right text-paramo-fg">
+                        {p.valor_mensual_estimado ? formatMoneyShort(p.valor_mensual_estimado) : "—"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {p.proximo_compromiso ? (
+                          <>
+                            <span
+                              className={
+                                p.proximo_compromiso.fecha < hoy
+                                  ? "font-bold text-paramo-bad"
+                                  : p.proximo_compromiso.fecha === hoy
+                                    ? "font-bold text-paramo-warn"
+                                    : "text-paramo-fg"
+                              }
+                            >
+                              {textoFecha(p.proximo_compromiso.fecha)}
+                            </span>{" "}
+                            <span className="text-xs text-paramo-muted">
+                              {p.proximo_compromiso.titulo}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-paramo-muted">Sin compromiso</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-3 text-right ${
+                          stale ? "font-bold text-paramo-bad" : "text-xs text-paramo-muted"
+                        }`}
+                      >
+                        {dd === 0 ? "hoy" : `hace ${dd} d`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-2 md:hidden">
+            {filtered.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setOpenId(p.id)}
+                className={`block w-full space-y-1 rounded-[10px] border border-paramo-line bg-paramo-surface p-3 text-left ${
+                  p.activo ? "" : "opacity-60"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <b className="text-paramo-fg">{p.empresa}</b>
+                  <span className="text-xs text-paramo-muted">{p.etapa_nombre}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-xs text-paramo-muted">
+                  <span>
+                    <span className="text-paramo-olive">{stars(p.calificacion)}</span>{" "}
+                    {p.responsable_nombre}
+                  </span>
+                  <span>
+                    {p.valor_mensual_estimado ? formatMoneyShort(p.valor_mensual_estimado) : ""}
+                  </span>
+                </div>
+                {p.proximo_compromiso ? (
+                  <div className="text-xs text-paramo-muted">
+                    {textoFecha(p.proximo_compromiso.fecha)} · {p.proximo_compromiso.titulo}
+                  </div>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </>
       )}
+
+      {openId ? (
+        <ProspectoFicha
+          key={openId}
+          prospectoId={openId}
+          catalogos={catalogos}
+          userId={userId}
+          userRol={userRol}
+          onCerrar={() => setOpenId(null)}
+          onActualizado={actualizarEnLista}
+          onEliminado={(id) => setProspectos((prev) => prev.filter((x) => x.id !== id))}
+        />
+      ) : null}
 
       {drawerOpen ? (
         <div

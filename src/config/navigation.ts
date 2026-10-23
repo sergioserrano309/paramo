@@ -4,6 +4,8 @@ import type { Rol } from "@/config/roles";
 export type NavItem = {
   href: string;
   label: string;
+  /** Etiqueta corta para la barra inferior del móvil (as-is VIEWS[].m). */
+  corto?: string;
   key: Modulo;
 };
 
@@ -14,8 +16,8 @@ export const APP_NAV: NavItem[] = [
   { key: "usuarios", href: "/usuarios", label: "Usuarios" },
   { key: "prospectos", href: "/prospectos", label: "Prospectos" },
   { key: "funnel", href: "/funnel", label: "Funnel" },
-  { key: "compromisos", href: "/compromisos", label: "Compromisos" },
-  { key: "cotizaciones", href: "/cotizaciones", label: "Cotizaciones" },
+  { key: "compromisos", href: "/compromisos", label: "Compromisos", corto: "Agenda" },
+  { key: "cotizaciones", href: "/cotizaciones", label: "Cotizaciones", corto: "Cotizar" },
   { key: "productos", href: "/productos", label: "Productos" },
   { key: "ventas", href: "/ventas", label: "Ventas" },
 ];

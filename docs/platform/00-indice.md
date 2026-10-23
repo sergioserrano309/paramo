@@ -13,7 +13,8 @@ Mientras este árbol se completa, la fuente de verdad del comportamiento y la es
 3. [`04-roles-y-permisos.md`](./04-roles-y-permisos.md) — matriz rol × módulo × acción (as-is)
 4. `07-estados.md` (por crear)
 5. `05-modulos/` (por crear)
-6. `08-hallazgos.md` / `09-preguntas-abiertas.md` (por crear)
+6. [`08-hallazgos.md`](./08-hallazgos.md) / [`09-preguntas-abiertas.md`](./09-preguntas-abiertas.md)
+   — auditoría del as-is frente a lo construido y decisiones pendientes
 
 ## Roles canónicos
 

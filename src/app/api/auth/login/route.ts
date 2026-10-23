@@ -5,7 +5,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import { createAuthClient } from "@/lib/supabase-auth";
 import { createServiceClient } from "@/lib/supabase-server";
 import { hasSupabaseAuthConfig, hasSupabaseServiceConfig } from "@/lib/env";
-import { isRol } from "@/config/roles";
+import { isRol, type Rol } from "@/config/roles";
+import { registrarBitacora } from "@/lib/bitacora";
 
 const MAX_BODY_BYTES = 4_096;
 
@@ -75,6 +76,14 @@ export async function POST(request: Request) {
     await auth.auth.signOut();
     return NextResponse.json({ error: AUTH_DENIED_MESSAGE }, { status: 401 });
   }
+
+  // As-is: el ingreso queda en bitácora («Ingreso»); Supervisión muestra el último.
+  await registrarBitacora(
+    service,
+    { userId: profile.id as string, profile: { rol: profile.rol as Rol } },
+    "Ingreso",
+    "Inició sesión",
+  );
 
   return NextResponse.json({
     ok: true,

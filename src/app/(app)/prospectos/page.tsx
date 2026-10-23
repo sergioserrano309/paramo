@@ -5,6 +5,7 @@ import {
   requireModuleAccess,
 } from "@/lib/permissions";
 import {
+  adjuntarSeguimiento,
   mapProspectoRow,
   PROSPECTO_SELECT_LIST,
   type ProspectoRow,
@@ -21,8 +22,13 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-export default async function ProspectosPage() {
+type PageProps = { searchParams: Promise<{ nuevo?: string; abrir?: string }> };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function ProspectosPage({ searchParams }: PageProps) {
   const ctx = await requireModuleAccess("prospectos");
+  const sp = await searchParams;
   const service = createServiceClient();
 
   const [
@@ -67,11 +73,12 @@ export default async function ProspectosPage() {
       .limit(200),
   ]);
 
-  const prospectos: ProspectoListItem[] = [];
+  let prospectos: ProspectoListItem[] = [];
   if (!prospectosRes.error && prospectosRes.data) {
     for (const row of prospectosRes.data as unknown as ProspectoRow[]) {
       prospectos.push(mapProspectoRow(row));
     }
+    prospectos = await adjuntarSeguimiento(service, prospectos);
   }
 
   const responsables: ResponsableOption[] = [];
@@ -111,6 +118,11 @@ export default async function ProspectosPage() {
       catalogos={catalogos}
       canCreate={canCreateProspecto(ctx.profile.rol)}
       defaultResponsableId={defaultResponsableId}
+      userId={ctx.userId}
+      userRol={ctx.profile.rol}
+      // Atajo de teclado «N» y enlaces desde Supervisión / Dashboard / Bitácora.
+      nuevoToken={sp.nuevo ?? ""}
+      abrirInicial={sp.abrir && UUID.test(sp.abrir) ? sp.abrir : ""}
     />
   );
 }
