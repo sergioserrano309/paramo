@@ -16,10 +16,10 @@
 | [06-productos.md](./06-productos.md) | Productos: catálogo, precios por tipo de cliente y aprobación |
 | [07-cotizaciones.md](./07-cotizaciones.md) | Cotizaciones: borradores, aprobación de descuento, PDF |
 | [08-ventas.md](./08-ventas.md) | Ventas: carga de Excel, análisis por cliente / producto |
-| [09-compromisos.md](./09-compromisos.md) | Compromisos del desarrollo paralelo (adaptado a main; ver nota) |
+| [09-compromisos.md](./09-compromisos.md) | Notas del hito paralelo; la agenda vigente está en 06 |
 | [10-supervision.md](./10-supervision.md) | Supervisión: KPI, observaciones, listas de precios, bitácora |
 | [11-dashboard.md](./11-dashboard.md) | Dashboard: KPI, agenda, funnel, ventas y alertas |
-| [12-ficha-prospecto.md](./12-ficha-prospecto.md) | Ficha ampliada, interesados y retroalimentación (adaptada) |
+| [12-ficha-prospecto.md](./12-ficha-prospecto.md) | Drawer de main, rutas de ProspectoFicha, tablas por validar |
 | [13-shell.md](./13-shell.md) | Menú móvil, contadores, tema y atajos de teclado |
 
 ## Módulos (rutas)
@@ -55,10 +55,13 @@ Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
 `GET/POST /api/observaciones`, `POST/DELETE /api/observaciones/[id]`,
 `PATCH /api/config/precios`, `GET /api/bitacora`.
 
-Al unir `main` con `feat/modulos-completos` se conservó la agenda, el listado
-y el funnel de `main`. Productos, cotizaciones, ventas, dashboard, supervisión
-y el shell (contadores, atajos, barra móvil) se adaptaron a ese código: el
-historial del prospecto sigue en `prospectos.actividad` y la tabla de
-compromisos vigente es la de `20261022193000`.
+Al unir `main` con `feat/modulos-completos` se conservó la agenda, el listado,
+el funnel y el panel `ProspectoDetalleDrawer`. Productos, cotizaciones, ventas,
+dashboard, supervisión y el shell se adaptaron a ese código. El historial que
+escribe la app sigue en `prospectos.actividad`. La migración de ficha crea
+también `prospecto_actividad`, `prospecto_productos` y `producto_feedback`:
+hay que validarlas al aplicarlas. La vista `ventas_por_mes` se recalcula en
+cada lectura; si el volumen crece, pasar a una vista materializada (ver
+[08-ventas.md](./08-ventas.md)).
 
 Matriz detallada: [`docs/platform/04-roles-y-permisos.md`](../platform/04-roles-y-permisos.md).

@@ -1,10 +1,12 @@
 # Compromisos — agenda comercial (Hito 8)
 
 > **Merge con main:** la pantalla y la API vigentes están en
-> [06-compromisos.md](./06-compromisos.md). La tabla canónica es
-> `20261022193000_crear_compromisos.sql`. La migración
-> `20261023150000` no la modifica si ya existe. Lo de abajo describe el
-> desarrollo paralelo que se adaptó a ese esquema.
+> [06-compromisos.md](./06-compromisos.md). La tabla es
+> `20261022193000_crear_compromisos.sql`. La migración que volvía a crear
+> `compromisos` se eliminó del repo: no agregaba columnas. Lo que sí quedó
+> de este hito, adaptado a esa tabla, es `POST /api/compromisos/[id]/hecho`
+> y los enlaces `?nuevo=` / `?prospecto=`. El texto de abajo describe el
+> diseño de la otra rama; no es la pantalla que abre `/compromisos`.
 
 ## Desarrollado
 
@@ -14,8 +16,8 @@
   con atajos de fecha.
 - Supervisor: tarjetas de seguimiento por persona (pendientes, vencidos, % cumplido a 30
   días, % a tiempo, próximo compromiso) y asignación de tareas a cualquier usuario activo.
-- Migración `20261023150000_crear_compromisos.sql`: tabla `compromisos` (RLS + `revoke`,
-  trigger de `actualizado_en`, índices por responsable/fecha).
+- La tabla de agenda no se volvió a crear. Sigue siendo
+  `20261022193000_crear_compromisos.sql`.
 
 ### API
 
@@ -61,7 +63,7 @@
 
 ## Cómo probar / operar
 
-1. Aplicar la migración `20261023150000_crear_compromisos.sql`.
+1. Aplicar la migración `20261022193000_crear_compromisos.sql` (la de main).
 2. Login `comercial` → `/compromisos`: agendar con los atajos de fecha, marcar hecho,
    editar, eliminar; filtrar por vencidos / hoy / 7 días.
 3. Login `supervisor`: ver las tarjetas por persona; asignar una tarea a un comercial
@@ -70,7 +72,7 @@
 
 ## Archivos clave
 
-- `supabase/migrations/20261023150000_crear_compromisos.sql`
+- `supabase/migrations/20261022193000_crear_compromisos.sql`
 - `src/app/(app)/compromisos/page.tsx`, `src/components/CompromisosPanel.tsx`
 - `src/app/api/compromisos/` (`route.ts`, `[id]/route.ts`, `[id]/hecho`)
 - `src/lib/compromisos.ts`, `src/lib/compromisos-permisos.ts`, `src/lib/fechas.ts`

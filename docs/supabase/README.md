@@ -29,9 +29,7 @@ Detalle: [`.env.example`](../../.env.example).
 
 | `20261023110000_crear_cotizaciones.sql` | Tabla `cotizaciones` (líneas en `items jsonb`, número `COT-AAAA-NNN` por trigger), RLS+revoke; columna `canales.tipo_cliente_codigo` |
 | `20261023130000_crear_ventas.sql` | Tabla `ventas`, vista `ventas_por_mes`, funciones `cargar_ventas` / `ventas_resumen` / `ventas_totales` (solo `service_role`) |
-| `20261023150000_crear_compromisos.sql` | No altera `compromisos` si la de main ya existe (`create table if not exists`) |
-| `20261023170000_crear_observaciones.sql` | No recrea `observaciones` si la de main ya existe |
-| `20261024090000_crear_ficha_prospecto.sql` | `prospecto_productos` y `producto_feedback` (la app sí los usa). También crea `prospecto_actividad`, que la app no consulta: el historial está en `prospectos.actividad` |
+| `20261024090000_crear_ficha_prospecto.sql` | `prospecto_actividad`, `prospecto_productos` y `producto_feedback`. Validar al aplicar: el historial que escribe la app hoy está en `prospectos.actividad` |
 | `20261024180000_observaciones_prospecto_opcional.sql` | `observaciones.prospecto_id` pasa a ser opcional (nota de gestión general) |
 | `20261023090000_crear_productos.sql` | Tabla `productos` (precios por tipo de cliente en `jsonb`, nombre único), RLS+revoke, trigger `actualizado_en`; aclara el comentario de `tipos_cliente.descuento_pct_default` |
 
@@ -83,9 +81,13 @@ Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
 ### `actividad` y `observaciones`
 
 `prospectos.actividad` es el historial de la ficha: lista jsonb
-`{ f, t, x, u }`. Empieza vacía; no reconstruye hechos anteriores. Supervisión
-y la ficha leen esa columna. La migración `20261024090000` también crea
-`prospecto_actividad`; la app no la usa como fuente.
+`{ f, t, x, u }` (día, tipo, texto, usuario). No es un sí/no. Empieza en `[]`.
+La ficha de main y Supervisión leen esa columna.
+
+`20261024090000` crea además `prospecto_actividad`, `prospecto_productos` y
+`producto_feedback`. Hay que validarlas al aplicarlas: comprobar si
+`prospecto_actividad` queda vacía (la app escribe el jsonb) y si interés y
+retroalimentación guardan filas en las otras dos.
 
 `observaciones`: texto del supervisor, estado `abierta` / `atendida`,
 respuesta del comercial. `prospecto_id` puede ser null (nota de gestión
@@ -99,9 +101,10 @@ Agenda de seguimientos (as-is). La tabla canónica es
 `prospecto_id` (nullable), `hecho` / `hecho_en`, `asignado`, `responsable_id`
 (nullable), `creado_por`. No tiene `actualizado_por`.
 
-`20261023150000_crear_compromisos.sql` usa `create table if not exists` y no
-cambia esa tabla si ya existe. La pantalla y `POST/PATCH/DELETE` son los de
-main. `POST /api/compromisos/[id]/hecho` marca hecho sobre el mismo esquema.
+La pantalla y `POST/PATCH/DELETE` son los de main.
+`POST /api/compromisos/[id]/hecho` marca hecho sobre el mismo esquema.
+No hay una segunda migración de `compromisos`: la que repetía el `CREATE`
+se quitó del repo porque no agregaba columnas.
 
 Detalle: [docs/app/06-compromisos.md](../app/06-compromisos.md).
 
@@ -109,8 +112,12 @@ Detalle: [docs/app/06-compromisos.md](../app/06-compromisos.md).
 
 Catálogo de productos (`precios` y `precios_pendientes` en jsonb), cotizaciones
 y ventas. `ventas_meses` del inventario original no es tabla: es la vista
-`ventas_por_mes`. También: `prospecto_productos` y `producto_feedback`
-(ficha de producto e interesados).
+`ventas_por_mes`. Esa vista no guarda filas: cada lectura vuelve a agrupar
+`ventas` por mes. Con el volumen actual el costo es el del `GROUP BY`. Si
+más adelante hay muchos años de facturas y el resumen se pide en cada
+pantalla, conviene una vista materializada que se refresque al cargar el
+Excel, para no recalcular todo en cada visita. También:
+`prospecto_productos` y `producto_feedback` (interesados y opiniones).
 
 Detalle: [docs/app/06-productos.md](../app/06-productos.md),
 [docs/app/07-cotizaciones.md](../app/07-cotizaciones.md) y
@@ -118,9 +125,9 @@ Detalle: [docs/app/06-productos.md](../app/06-productos.md),
 
 **Orden para aplicar en un proyecto nuevo:** profiles → prospectos y catálogos
 → compromisos (main) → actividad/observaciones de la ficha → productos →
-cotizaciones → ventas → observaciones de módulos (no recrea la tabla) →
-ficha (`prospecto_productos`, `producto_feedback`) → observaciones con
-prospecto opcional. Luego seeds 002, 003 y 004.
+cotizaciones → ventas → ficha (`prospecto_actividad`,
+`prospecto_productos`, `producto_feedback`) → observaciones con prospecto
+opcional. Luego seeds 002, 003 y 004.
 
 ## Carpetas
 

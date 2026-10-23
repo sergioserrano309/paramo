@@ -14,7 +14,10 @@
   - **Listas de precios**: % de la lista general por tipo de cliente (acción `usuarios`).
   - **Bitácora** con filtros por usuario, acción y texto (200 más recientes).
   - Panel de **descuentos y precios por aprobar** (enlaza a Cotizaciones / Productos).
-- Migración `20261023170000_crear_observaciones.sql`: tabla `observaciones`.
+- La tabla `observaciones` es la de
+  `20261022223000_ficha_prospecto_actividad_observaciones.sql`.
+  `20261024180000_observaciones_prospecto_opcional.sql` permite una nota sin
+  prospecto. La migración que volvía a crear la tabla se eliminó.
 - La bitácora ya la escriben: Productos, Cotizaciones, Ventas, Compromisos, Observaciones,
   creación de prospectos, cambio de etapa (Funnel), ingreso y salida.
 
@@ -42,7 +45,9 @@
 ## Novedades respecto al as-is
 
 - «Contactos con clientes», «Contactos (N d)» y «Avances en el funnel» salen de
-  `prospectos.actividad` (jsonb). El tipo «Etapa» cuenta como avance.
+  `prospectos.actividad` (jsonb). El tipo «Etapa» cuenta como avance. La tabla
+  `prospecto_actividad` se crea en `20261024090000` y hay que validar si esos
+  KPI deben leerla o si sigue vacía.
 - El detalle de la bitácora enlaza a la ficha del prospecto, producto o cotización
   (`?abrir=ID`); si el registro ya se eliminó, la pantalla abre sin ficha.
 - Se registra «Ingreso» y «Salida»; no hay PIN ni modo local/online del as-is.
@@ -51,7 +56,8 @@
 
 ## Cómo probar / operar
 
-1. Aplicar la migración `20261023170000_crear_observaciones.sql`.
+1. Aplicar `20261022223000_ficha_prospecto_actividad_observaciones.sql` y
+   `20261024180000_observaciones_prospecto_opcional.sql`.
 2. Login `supervisor` → `/supervision`: cambiar período; crear una observación general y
    otra sobre un prospecto; probar «Asignar tarea» y «Asignar» desde la cartera.
 3. Login `comercial` → Dashboard: ver la observación, responderla y marcarla atendida;
@@ -61,7 +67,8 @@
 
 ## Archivos clave
 
-- `supabase/migrations/20261023170000_crear_observaciones.sql`
+- `supabase/migrations/20261022223000_ficha_prospecto_actividad_observaciones.sql`
+- `supabase/migrations/20261024180000_observaciones_prospecto_opcional.sql`
 - `src/app/(app)/supervision/page.tsx`, `src/components/SupervisionPanel.tsx`
 - `src/components/ObservacionesLista.tsx`, `src/components/PanelAprobaciones.tsx`, `src/components/BarChart.tsx`
 - `src/app/api/observaciones/`, `src/app/api/config/precios/`, `src/app/api/bitacora/`
