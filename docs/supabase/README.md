@@ -25,6 +25,13 @@ Detalle: [`.env.example`](../../.env.example).
 | `20261022153000_crear_profiles.sql` | Tabla `profiles`, RLS+revoke, trigger `actualizado_en` (sin auto-perfil al registrarse) |
 | `20261022170000_crear_prospectos_y_catalogos.sql` | Catálogos (`canales`, `fuentes`, `tipos_cliente`, `etapas_funnel`), `prospectos`, `bitacora` (esquema); RLS+revoke |
 
+| `20261023110000_crear_cotizaciones.sql` | Tabla `cotizaciones` (líneas en `items jsonb`, número `COT-AAAA-NNN` por trigger), RLS+revoke; columna `canales.tipo_cliente_codigo` |
+| `20261023130000_crear_ventas.sql` | Tabla `ventas`, vista `ventas_por_mes`, funciones `cargar_ventas` / `ventas_resumen` / `ventas_totales` (solo `service_role`) |
+| `20261023150000_crear_compromisos.sql` | Tabla `compromisos` (responsable FK obligatoria, tipos con CHECK), RLS+revoke |
+| `20261023170000_crear_observaciones.sql` | Tabla `observaciones` (abierta → atendida), RLS+revoke |
+| `20261024090000_crear_ficha_prospecto.sql` | Tablas `prospecto_actividad` (historial), `prospecto_productos` (productos de interés) y `producto_feedback` (opiniones), RLS+revoke |
+| `20261023090000_crear_productos.sql` | Tabla `productos` (precios por tipo de cliente en `jsonb`, nombre único), RLS+revoke, trigger `actualizado_en`; aclara el comentario de `tipos_cliente.descuento_pct_default` |
+
 **Importante:** una migración en el repo no cuenta hasta aplicarla en el proyecto Supabase.
 
 ### Seed (aplicar a mano)
@@ -32,6 +39,8 @@ Detalle: [`.env.example`](../../.env.example).
 | Archivo | Qué hace |
 |---|---|
 | `002_catalogos_prospectos.sql` | Inserta canales, fuentes, tipos de cliente y etapas del as-is |
+| `003_productos.sql` | Inserta las 21 referencias del sitio (requiere la migración de productos) |
+| `004_canal_tipo_cliente.sql` | Asigna a cada canal su tipo de cliente por defecto (requiere la migración de cotizaciones) |
 
 ## Tablas
 
@@ -65,12 +74,28 @@ Tablas de catálogo (PK `codigo` texto): `canales`, `fuentes`, `tipos_cliente`,
 Detalle de app: [docs/app/04-prospectos.md](../app/04-prospectos.md) y
 [docs/app/05-funnel.md](../app/05-funnel.md) (cambio de etapa).
 
-### Inventario objetivo (aún sin migración de dominio)
+### `productos` (migración + seed)
 
-`compromisos` · `cotizaciones` · `productos` · `ventas` · `ventas_meses` ·
-`observaciones`
+Catálogo de referencias: `nombre` (único sin distinguir mayúsculas), `sku`, `linea`
+(`frutas|vegetales|packs|otra`), `presentacion`, `estado`
+(`desarrollo|lanzamiento|activo|descontinuado`), `precio_publico` (PVP), `lanzamiento`,
+`descripcion`. Precios por tipo de cliente en dos `jsonb`: `precios` (en firme) y
+`precios_pendientes` (propuestos por el comercial). Detalle en
+[docs/app/06-productos.md](../app/06-productos.md).
 
-(`prospectos` y `bitacora` ya tienen migración; `bitacora` sin escritura aún.)
+### Resto del dominio
+
+`cotizaciones`, `ventas`, `compromisos` y `observaciones` ya tienen migración; el detalle
+está en sus docs (`docs/app/07` a `10`). `ventas_meses` del inventario original **no es
+tabla**: es la vista `ventas_por_mes`.
+
+`bitacora` recibe escrituras desde Productos, Cotizaciones, Ventas, Compromisos,
+Observaciones, Prospectos (alta), Funnel (cambio de etapa) y el login/logout
+(`src/lib/bitacora.ts`). Se lee en Supervisión.
+
+**Orden para aplicar en un proyecto nuevo:** profiles → prospectos y catálogos → productos
+→ cotizaciones → ventas → compromisos → observaciones → ficha del prospecto; luego los seeds
+002, 003 y 004.
 
 ## Carpetas
 

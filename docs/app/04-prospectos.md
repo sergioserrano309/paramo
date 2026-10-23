@@ -43,7 +43,7 @@ principal). La API acepta `null`, `""` u omitir en opcionales (Zod no los rechaz
 | Duplicidad empresa | **Sin** UNIQUE | Había pedido de unicidad; se revirtió |
 | Crear | `editar` \|\| `asignar` | Solo comercial |
 | Responsable al alta | Select de usuarios activos; default = yo | Forzar siempre al creador |
-| Bitácora | Tabla creada; **sin** insert al crear aún | Log inmediato (queda para Supervisión) |
+| Bitácora | Escribe «Prospecto creado» en `bitacora` (desde el hito de Supervisión) | — |
 | Visibilidad lista | Ambos roles ven **todos** | Filtrar por responsable (pendiente validar) |
 
 ### Barra rápida — ¿es necesaria?
@@ -105,12 +105,14 @@ las columnas actuales. No se hace en este hito.
 - `src/lib/permissions.ts` (`requireApiAnyPermission`, `canCreateProspecto`)
 - `src/lib/types/prospecto.ts`
 
-## Fuera de alcance (siguientes hitos)
+## Actualización (hito 11)
 
-- Editar ficha, inactivar, eliminar.
-- Cambiar etapa desde este listado (sí está en `/funnel`; ver
-  [05-funnel.md](./05-funnel.md)).
-- Historial de actividad / productos de interés.
-- Inserts en `bitacora` y UI de Supervisión.
-- Ownership fila a fila y filtros avanzados del as-is.
+Filtros, columnas «próximo compromiso» y «último contacto», ficha completa (editar,
+inactivar, eliminar, historial, productos de interés) y cambio de etapa desde la ficha: ver
+[12-ficha-prospecto.md](./12-ficha-prospecto.md). El listado ya no tiene «Canal» como
+columna; el canal es un filtro.
+
+## Fuera de alcance
+
+- Ownership fila a fila (que el comercial vea solo lo suyo): pendiente de validar.
 - Tabla `contactos` 1:N.

@@ -49,6 +49,10 @@ export type ProspectoListItem = {
   responsable_nombre: string;
   creado_en: string;
   ultimo_contacto: string | null;
+  /** Compromiso pendiente más cercano; se completa en los listados (as-is nextComp). */
+  proximo_compromiso: { fecha: string; titulo: string } | null;
+  /** Observaciones del supervisor sin atender sobre este prospecto. */
+  observaciones_abiertas: number;
 };
 
 export type ProspectosCatalogos = {

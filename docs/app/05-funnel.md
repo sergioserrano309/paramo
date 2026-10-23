@@ -37,7 +37,7 @@ Body: `{ etapa_codigo, motivo_perdida? }`. Si `etapa_codigo === 'perdido'`,
 | Tema | Decisión | Alternativa descartada / pendiente |
 |---|---|---|
 | Quién mueve | As-is `canEditP`: `editar` **o** soy el responsable | Supervisor con `asignar` mueve todo (ver validación abajo) |
-| Bitácora / actividad | **Sin** writes al cambiar etapa | Log inmediato (queda para Supervisión / actividad) |
+| Bitácora / actividad | Escribe «Cambio de etapa» en `bitacora` (desde el hito de Supervisión); **sin** timeline de actividad del prospecto | Timeline de actividad (pendiente) |
 | Próximo compromiso en tarjeta | Omitido (módulo compromisos después) | Mostrar stub vacío |
 | Stale | Sí, con `ultimo_contacto` \|\| día de `creado_en` | Omitir alerta |
 | Drawer Abrir | Ver + cambiar etapa; resto Próximamente | Editar ficha / inactivar en este hito |
@@ -90,11 +90,13 @@ Prospectos; cuando se acuerde, aplicar la misma regla aquí.
 - `src/lib/format.ts`, `src/lib/permissions.ts` (`canEditProspecto`)
 - Tokens de columna: `src/styles/paramo-theme.css` (`--paramo-stage-*`, `--paramo-rasp`)
 
-## Fuera de alcance (siguientes hitos)
+## Actualización (hito 11)
 
-- Editar datos / calificación / responsable desde el drawer.
-- Inactivar / reactivar / eliminar.
-- Actividad, compromisos, cotizaciones, productos de interés, observaciones,
-  historial (habilitar cuando existan esos módulos).
-- Writes a `bitacora` y timeline de actividad al cambiar etapa.
-- Ownership de lectura (filtrar board por responsable).
+«Abrir» usa ahora la **ficha completa** del prospecto (editar, calificar, reasignar,
+inactivar, actividad, compromisos, cotizaciones, productos de interés, historial; ver
+[12-ficha-prospecto.md](./12-ficha-prospecto.md)) y la tarjeta muestra el próximo compromiso.
+El cambio de etapa escribe en `bitacora` y en el historial del prospecto.
+
+## Fuera de alcance
+
+- Ownership de lectura (filtrar el tablero por responsable).

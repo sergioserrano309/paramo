@@ -7,6 +7,7 @@ import {
   requireApiAnyPermission,
   requireApiModuleAccess,
 } from "@/lib/permissions";
+import { registrarBitacora } from "@/lib/bitacora";
 import { rateLimit } from "@/lib/rate-limit";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import {
@@ -223,6 +224,15 @@ export async function POST(request: Request) {
   if (insertError || !created) {
     return NextResponse.json({ error: CREATE_DENIED }, { status: 500 });
   }
+
+  const creado = created as unknown as ProspectoRow;
+  await registrarBitacora(
+    service,
+    auth,
+    "Prospecto creado",
+    `${body.empresa} · responsable ${creado.responsable?.nombre ?? "—"}`,
+    { tabla: "prospectos", id: creado.id },
+  );
 
   return NextResponse.json(
     {

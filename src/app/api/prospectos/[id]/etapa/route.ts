@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isMotivoPerdida } from "@/config/motivos-perdida";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
+import { ACT_ETAPA } from "@/config/prospectos";
+import { registrarActividad } from "@/lib/actividad";
+import { registrarBitacora } from "@/lib/bitacora";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { todayBogota } from "@/lib/format";
 import {
@@ -83,7 +86,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: actual, error: loadError } = await service
     .from("prospectos")
-    .select("id, activo, etapa_codigo, responsable_id")
+    .select("id, empresa, activo, etapa_codigo, responsable_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -161,8 +164,25 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: DENIED }, { status: 500 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    prospecto: mapProspectoRow(updated as unknown as ProspectoRow),
+  const prospecto = mapProspectoRow(updated as unknown as ProspectoRow);
+  await registrarActividad(service, {
+    prospectoId: id,
+    tipo: ACT_ETAPA,
+    texto: `Pasó a ${prospecto.etapa_nombre}${motivoPerdida ? ` · ${motivoPerdida}` : ""}`,
+    usuarioId: auth.userId,
   });
+  const { data: anterior } = await service
+    .from("etapas_funnel")
+    .select("nombre")
+    .eq("codigo", actual.etapa_codigo)
+    .maybeSingle();
+  await registrarBitacora(
+    service,
+    auth,
+    "Cambio de etapa",
+    `${actual.empresa}: ${anterior?.nombre ?? actual.etapa_codigo} → ${prospecto.etapa_nombre}${motivoPerdida ? ` (${motivoPerdida})` : ""}`,
+    { tabla: "prospectos", id },
+  );
+
+  return NextResponse.json({ ok: true, prospecto });
 }
