@@ -1,3 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { todayBogota } from "@/lib/format";
+
 /** Línea del historial de la ficha (as-is p.actividad). */
 export type ActividadItem = {
   /** Día Bogotá YYYY-MM-DD. */
@@ -59,4 +62,47 @@ export function appendActividad(
   return next.length > MAX_ACTIVIDAD
     ? next.slice(next.length - MAX_ACTIVIDAD)
     : next;
+}
+
+/**
+ * Escribe en `prospectos.actividad` (jsonb de main). Los módulos que llegaron
+ * de la otra rama llamaban una tabla `prospecto_actividad`; aquí se adapta
+ * al historial que ya lee la ficha. Si falla, no tumba la operación principal.
+ */
+export async function registrarActividad(
+  service: SupabaseClient,
+  args: {
+    prospectoId: string;
+    tipo: string;
+    texto: string;
+    usuarioId: string;
+    tocarContacto?: boolean;
+  },
+): Promise<void> {
+  try {
+    const { data, error } = await service
+      .from("prospectos")
+      .select("actividad")
+      .eq("id", args.prospectoId)
+      .maybeSingle();
+    if (error || !data) return;
+
+    const hoy = todayBogota();
+    const actividad = appendActividad(data.actividad, {
+      f: hoy,
+      t: args.tipo.slice(0, 40),
+      x: args.texto.slice(0, 1_000),
+      u: args.usuarioId,
+    });
+    const patch: { actividad: ActividadItem[]; ultimo_contacto?: string; actualizado_por: string } =
+      {
+        actividad,
+        actualizado_por: args.usuarioId,
+      };
+    if (args.tocarContacto) patch.ultimo_contacto = hoy;
+
+    await service.from("prospectos").update(patch).eq("id", args.prospectoId);
+  } catch {
+    // Trazabilidad: un fallo del historial no revierte la operación ya hecha.
+  }
 }

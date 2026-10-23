@@ -20,13 +20,28 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-export default async function CompromisosPage() {
+type PageProps = {
+  searchParams: Promise<{ nuevo?: string; prospecto?: string }>;
+};
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function CompromisosPage({ searchParams }: PageProps) {
   const ctx = await requireModuleAccess("compromisos");
+  const sp = await searchParams;
   const service = createServiceClient();
   const supervisor = ctx.profile.rol === "supervisor";
 
-  const [compromisos, prospectosRes, etapasRes, canalesRes, fuentesRes, tiposRes, profilesRes] =
-    await Promise.all([
+  const [
+    compromisos,
+    prospectosRes,
+    etapasRes,
+    canalesRes,
+    fuentesRes,
+    tiposRes,
+    profilesRes,
+  ] = await Promise.all([
     fetchCompromisosAgenda(service, supervisor ? null : ctx.userId),
     service
       .from("prospectos")
@@ -114,6 +129,11 @@ export default async function CompromisosPage() {
       canCreate={canCreateCompromiso(ctx.profile.rol)}
       userId={ctx.userId}
       userRol={ctx.profile.rol}
+      // Atajo «C», Dashboard, Supervisión y ficha: abren el alta, con prospecto si viene.
+      nuevoToken={sp.nuevo ?? ""}
+      prospectoInicial={
+        sp.prospecto && UUID.test(sp.prospecto) ? sp.prospecto : ""
+      }
     />
   );
 }

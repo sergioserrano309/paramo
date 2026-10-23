@@ -38,11 +38,24 @@ function SunIcon() {
   );
 }
 
-/** Interruptor del tema as-is (data-theme + la misma clave local). */
-export function ThemeToggle() {
+/**
+ * Interruptor del tema (data-theme + la misma clave local del as-is).
+ * `className` lo usa la barra inferior del móvil; en el rail se ve el botón completo.
+ */
+export function ThemeToggle({ className }: { className?: string }) {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
+    try {
+      const guardado = localStorage.getItem(TEMA_KEY);
+      if (guardado === "dark" || guardado === "light") {
+        document.documentElement.setAttribute("data-theme", guardado);
+        setDark(guardado === "dark");
+        return;
+      }
+    } catch {
+      /* sin almacenamiento: se usa el tema ya puesto en el documento */
+    }
     setDark(document.documentElement.getAttribute("data-theme") === "dark");
   }, []);
 
@@ -57,15 +70,20 @@ export function ThemeToggle() {
     setDark(next === "dark");
   }
 
+  const etiqueta = dark ? "Modo claro" : "Modo oscuro";
+
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-label={dark ? "Activar modo claro" : "Activar modo oscuro"}
-      className="inline-flex min-h-11 w-full items-center gap-2 rounded-full border border-paramo-line bg-paramo-surface px-3 text-[12.5px] font-bold text-paramo-fg hover:border-paramo-muted"
+      aria-label={`Activar ${etiqueta.toLowerCase()}`}
+      className={
+        className ??
+        "inline-flex min-h-11 w-full items-center gap-2 rounded-full border border-paramo-line bg-paramo-surface px-3 text-[12.5px] font-bold text-paramo-fg hover:border-paramo-muted"
+      }
     >
       {dark ? <SunIcon /> : <MoonIcon />}
-      {dark ? "Modo claro" : "Modo oscuro"}
+      {className ? null : etiqueta}
     </button>
   );
 }

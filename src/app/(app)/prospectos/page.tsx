@@ -22,8 +22,13 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-export default async function ProspectosPage() {
+type PageProps = { searchParams: Promise<{ nuevo?: string; abrir?: string }> };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function ProspectosPage({ searchParams }: PageProps) {
   const ctx = await requireModuleAccess("prospectos");
+  const sp = await searchParams;
   const service = createServiceClient();
 
   const [
@@ -119,6 +124,8 @@ export default async function ProspectosPage() {
       userId={ctx.userId}
       userRol={ctx.profile.rol}
       proximosPorProspecto={proximosPorProspecto}
+      nuevoToken={sp.nuevo ?? ""}
+      abrirInicial={sp.abrir && UUID.test(sp.abrir) ? sp.abrir : ""}
     />
   );
 }

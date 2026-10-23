@@ -31,6 +31,10 @@ type ProspectosPanelProps = {
   userId: string;
   userRol: Rol;
   proximosPorProspecto: Record<string, ProximoCompromiso>;
+  /** Token de `?nuevo=` (atajo N). Si viene, abre el alta. */
+  nuevoToken?: string;
+  /** `?abrir=` abre la ficha de ese prospecto. */
+  abrirInicial?: string;
 };
 
 type FormState = {
@@ -102,6 +106,8 @@ export function ProspectosPanel({
   userId,
   userRol,
   proximosPorProspecto,
+  nuevoToken = "",
+  abrirInicial = "",
 }: ProspectosPanelProps) {
   const router = useRouter();
   const createTitleId = useId();
@@ -127,7 +133,7 @@ export function ProspectosPanel({
 
   const [prospectos, setProspectos] = useState(initialProspectos);
   const [createOpen, setCreateOpen] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(abrirInicial || null);
   const [lostForId, setLostForId] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [form, setForm] = useState(() =>
@@ -154,6 +160,10 @@ export function ProspectosPanel({
   useEffect(() => {
     setProspectos(initialProspectos);
   }, [initialProspectos]);
+
+  useEffect(() => {
+    if (nuevoToken && canCreate) setCreateOpen(true);
+  }, [nuevoToken, canCreate]);
 
   useEffect(() => {
     if (!createOpen) return;

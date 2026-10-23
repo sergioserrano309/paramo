@@ -6,6 +6,7 @@ import {
   requireModuleAccess,
 } from "@/lib/permissions";
 import {
+  adjuntarSeguimiento,
   mapProspectoRow,
   PROSPECTO_SELECT_LIST,
   type ProspectoRow,
@@ -69,11 +70,12 @@ export default async function FunnelPage() {
       .limit(200),
   ]);
 
-  const prospectos: ProspectoListItem[] = [];
+  let prospectos: ProspectoListItem[] = [];
   if (!prospectosRes.error && prospectosRes.data) {
     for (const row of prospectosRes.data as unknown as ProspectoRow[]) {
       prospectos.push(mapProspectoRow(row));
     }
+    prospectos = await adjuntarSeguimiento(service, prospectos);
   }
 
   const proximosPorProspecto = await fetchProximosPorProspecto(

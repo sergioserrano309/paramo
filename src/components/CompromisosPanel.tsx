@@ -54,6 +54,10 @@ type CompromisosPanelProps = {
   canCreate: boolean;
   userId: string;
   userRol: Rol;
+  /** Token de `?nuevo=` (atajo C). Si viene, abre el alta. */
+  nuevoToken?: string;
+  /** Prospecto preseleccionado cuando el alta llega con `?prospecto=`. */
+  prospectoInicial?: string;
 };
 
 type EditorState =
@@ -95,6 +99,8 @@ export function CompromisosPanel({
   canCreate,
   userId,
   userRol,
+  nuevoToken = "",
+  prospectoInicial = "",
 }: CompromisosPanelProps) {
   const router = useRouter();
   const detailTitleId = useId();
@@ -109,6 +115,10 @@ export function CompromisosPanel({
   const [movingId, setMovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (nuevoToken && canCreate) setEditor({ mode: "new" });
+  }, [nuevoToken, canCreate]);
 
   const hoy = todayBogota();
   const supervisor = userRol === "supervisor";
@@ -447,8 +457,9 @@ export function CompromisosPanel({
 
       {editor ? (
         <CompromisoFormModal
-          key={editor.mode === "edit" ? editor.compromiso.id : "new"}
+          key={editor.mode === "edit" ? editor.compromiso.id : `new-${nuevoToken}`}
           compromiso={editor.mode === "edit" ? editor.compromiso : null}
+          prospectoInicial={editor.mode === "new" ? prospectoInicial : ""}
           responsables={responsables}
           prospectos={prospectos}
           userId={userId}
@@ -781,6 +792,7 @@ function fechaLarga(ymd: string): string {
 
 function CompromisoFormModal({
   compromiso,
+  prospectoInicial = "",
   responsables,
   prospectos,
   userId,
@@ -790,6 +802,7 @@ function CompromisoFormModal({
   onDelete,
 }: {
   compromiso: CompromisoAgendaItem | null;
+  prospectoInicial?: string;
   responsables: ResponsableOption[];
   prospectos: ProspectoListItem[];
   userId: string;
@@ -809,7 +822,7 @@ function CompromisoFormModal({
     compromiso?.fecha ?? addDaysYmd(hoy, 1),
   );
   const [prospectoId, setProspectoId] = useState(
-    compromiso?.prospecto_id ?? "",
+    compromiso?.prospecto_id ?? prospectoInicial ?? "",
   );
   const [notas, setNotas] = useState(compromiso?.notas ?? "");
   const [responsableId, setResponsableId] = useState(
@@ -822,6 +835,13 @@ function CompromisoFormModal({
 
   const opcionesResp = opcionesResponsable(responsables, compromiso);
   const opcionesPros = opcionesProspecto(prospectos, compromiso);
+  if (
+    prospectoInicial &&
+    !opcionesPros.some((p) => p.id === prospectoInicial)
+  ) {
+    const extra = prospectos.find((p) => p.id === prospectoInicial);
+    if (extra) opcionesPros.push({ id: extra.id, empresa: extra.empresa });
+  }
   const submitLabel = editing
     ? "Guardar"
     : responsableId === userId
