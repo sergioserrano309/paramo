@@ -47,9 +47,11 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims verifica el token localmente (y lo renueva si venció) sin viajar a Supabase
+  // Auth: ahorra un viaje de red en CADA petición. La autorización real la hace
+  // getAuthContext al reconsultar `profiles`.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   if (!user && !isPublic) {
     if (pathname.startsWith("/api/")) {

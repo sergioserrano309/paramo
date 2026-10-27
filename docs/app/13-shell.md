@@ -24,6 +24,28 @@
 | Tema | Atributo `data-theme` + `localStorage` | Cookie (el servidor no necesita saberlo) |
 | Atajos | `router.push` con token distinto en cada pulsación | Estado global compartido |
 
+## Rendimiento de la navegación
+
+Medido el 2026-10-27: ida y vuelta de la red del usuario a Vercel ≈ 0,25 s; la función corre en
+`iad1` (Washington). Cambiar de módulo hacía 7–9 viajes seguidos a Supabase y no mostraba nada
+hasta terminarlos. Qué se hizo:
+
+| Cambio | Efecto |
+|---|---|
+| `src/app/(app)/loading.tsx` | Esqueleto inmediato al hacer clic; en producción Next precarga la estructura del módulo |
+| `experimental.staleTimes.dynamic = 20` (`next.config.ts`) | Volver a un módulo en 20 s no repite el viaje; `router.refresh()` limpia el caché |
+| `getClaims()` en `middleware.ts` y `getAuthContext` | Quita 2 viajes a Supabase Auth por petición; el perfil sigue reconsultándose en cada una |
+| `cache()` en `getAuthContext` | Layout y página comparten la sesión del mismo render |
+| Contadores del menú con `unstable_cache` (30 s) | 4 consultas menos por clic |
+| Dashboard y Supervisión en una sola ronda; aprobaciones solo traen las cotizaciones pendientes | Menos viajes y menos datos |
+
+**Trade-off de seguridad:** con `getClaims` una sesión cerrada en otro dispositivo sigue válida
+hasta que venza su token (≤ 1 h). Desactivar al usuario o cambiarle el rol surte efecto de
+inmediato porque `profiles` se consulta en cada petición.
+
+**Pendiente de medir:** región de Supabase frente a la de Vercel (`iad1`); si están lejos, cada
+viaje cuesta más.
+
 ## Novedades respecto al as-is
 
 - Sin banner «Perfil Supervisor» ni indicador «Conectado · guardado automático»: no aplican
