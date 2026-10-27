@@ -3,7 +3,6 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import {
   ESTADOS_PRODUCTO,
-  FB_TIPOS,
   LINEAS_PRODUCTO,
   PCT_MAX_PRODUCTO,
   TIPO_CLIENTE_PVP,
@@ -63,7 +62,7 @@ type FormState = {
   estado: string;
   presentacion: string;
   sku: string;
-  lanzamiento: string;
+  codigo: string;
   descripcion: string;
   precios: Record<string, PrecioForm>;
 };
@@ -119,7 +118,7 @@ function formVacio(tipos: TipoClientePrecio[]): FormState {
     estado: "desarrollo",
     presentacion: "",
     sku: "",
-    lanzamiento: "",
+    codigo: "",
     descripcion: "",
     precios,
   };
@@ -149,7 +148,7 @@ function formDesdeProducto(
     estado: p.estado,
     presentacion: p.presentacion,
     sku: p.sku,
-    lanzamiento: p.lanzamiento ?? "",
+    codigo: p.codigo,
     descripcion: p.descripcion,
   };
 }
@@ -181,12 +180,6 @@ export function ProductosPanel({
     interesados: InteresadoProducto[];
     opiniones: OpinionProducto[];
   } | null>(null);
-  const [fb, setFb] = useState<{ tipo: string; cliente: string; calif: number; texto: string }>({
-    tipo: FB_TIPOS[0],
-    cliente: "",
-    calif: 0,
-    texto: "",
-  });
 
   // Llegada con `?abrir=ID` (bitácora, ventas…): abre la ficha de ese producto.
   useEffect(() => {
@@ -223,30 +216,6 @@ export function ProductosPanel({
       cancelado = true;
     };
   }, [abierto]);
-
-  async function agregarOpinion() {
-    if (!actual) return;
-    setError(null);
-    if (!fb.texto.trim() && !fb.calif) {
-      setError("Escribe un comentario o califica.");
-      return;
-    }
-    setCargando(true);
-    try {
-      const res = await llamar<{ interesados: InteresadoProducto[]; opiniones: OpinionProducto[] }>(
-        `/api/productos/${actual.id}/feedback`,
-        "POST",
-        fb,
-      );
-      setOpinionesData({ interesados: res.interesados, opiniones: res.opiniones });
-      setFb((s) => ({ ...s, cliente: "", calif: 0, texto: "" }));
-      setAviso("Retroalimentación registrada.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo registrar la retroalimentación.");
-    } finally {
-      setCargando(false);
-    }
-  }
 
   useEffect(() => {
     if (!abierto) return;
@@ -335,7 +304,7 @@ export function ProductosPanel({
       estado: form.estado,
       presentacion: form.presentacion,
       sku: form.sku,
-      lanzamiento: form.lanzamiento || null,
+      codigo: form.codigo,
       descripcion: form.descripcion,
       precios,
     };
@@ -464,7 +433,7 @@ export function ProductosPanel({
       .filter(
         (p) =>
           !term ||
-          [p.nombre, p.sku, nombreLinea(p.linea)].join(" ").toLowerCase().includes(term),
+          [p.nombre, p.sku, p.codigo, nombreLinea(p.linea)].join(" ").toLowerCase().includes(term),
       )
       .sort((a, b) => {
         const oa = estadoProducto(a.estado).orden;
@@ -561,7 +530,7 @@ export function ProductosPanel({
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar producto o SKU…"
+              placeholder="Buscar producto, SKU o código…"
               aria-label="Buscar productos"
               className={`${fieldClass} max-w-md flex-1`}
             />
@@ -601,11 +570,6 @@ export function ProductosPanel({
                       <b className="text-paramo-fg">
                         {p.precio_publico ? formatCOP(p.precio_publico) : "Sin precio"}
                       </b>
-                      {p.estado === "lanzamiento" && p.lanzamiento ? (
-                        <span className="text-xs text-paramo-muted">
-                          lanza {fechaCorta(p.lanzamiento)}
-                        </span>
-                      ) : null}
                     </div>
                     <div className="text-xs text-paramo-muted">
                       <b className="text-paramo-fg">
@@ -662,6 +626,7 @@ export function ProductosPanel({
                     <EstadoPill estado={actual.estado} />
                     {nombreLinea(actual.linea)}
                     {actual.sku ? ` · SKU ${actual.sku}` : ""}
+                    {actual.codigo ? ` · Código ${actual.codigo}` : ""}
                   </div>
                 ) : null}
               </div>
@@ -785,83 +750,6 @@ export function ProductosPanel({
                     <h3 className="text-xs font-bold uppercase tracking-wide text-paramo-muted">
                       Retroalimentación y degustaciones
                     </h3>
-                    {canEdit ? (
-                      <div className="space-y-2 rounded-[10px] border border-paramo-line p-3">
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <label htmlFor="fb-tipo" className={labelClass}>
-                              Tipo
-                            </label>
-                            <select
-                              id="fb-tipo"
-                              value={fb.tipo}
-                              onChange={(e) => setFb((s) => ({ ...s, tipo: e.target.value }))}
-                              className={fieldClass}
-                            >
-                              {FB_TIPOS.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label htmlFor="fb-cliente" className={labelClass}>
-                              Cliente o prospecto
-                            </label>
-                            <input
-                              id="fb-cliente"
-                              maxLength={200}
-                              value={fb.cliente}
-                              onChange={(e) => setFb((s) => ({ ...s, cliente: e.target.value }))}
-                              placeholder="Empresa"
-                              className={fieldClass}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <span className={labelClass}>Calificación</span>
-                          <div role="group" aria-label="Calificación" className="flex">
-                            {[1, 2, 3, 4, 5].map((n) => (
-                              <button
-                                key={n}
-                                type="button"
-                                aria-label={`${n} de 5`}
-                                onClick={() => setFb((s) => ({ ...s, calif: s.calif === n ? 0 : n }))}
-                                className={`min-h-11 min-w-9 text-2xl leading-none ${
-                                  n <= fb.calif ? "text-paramo-olive" : "text-paramo-line"
-                                }`}
-                              >
-                                ★
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label htmlFor="fb-texto" className={labelClass}>
-                            Comentario
-                          </label>
-                          <input
-                            id="fb-texto"
-                            maxLength={1000}
-                            value={fb.texto}
-                            onChange={(e) => setFb((s) => ({ ...s, texto: e.target.value }))}
-                            placeholder="Ej. Gustó la textura, piden empaque más grande"
-                            className={fieldClass}
-                          />
-                        </div>
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            disabled={cargando}
-                            onClick={agregarOpinion}
-                            className={btnPrimary}
-                          >
-                            Agregar
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
                     {opinionesData?.opiniones.length ? (
                       <ul className="space-y-2">
                         {opinionesData.opiniones.map((o) => (
@@ -886,7 +774,7 @@ export function ProductosPanel({
                       </ul>
                     ) : (
                       <p className="text-xs text-paramo-muted">
-                        Aún no hay retroalimentación registrada.
+                        Aún no hay retroalimentación. Se registra desde la ficha de cada prospecto.
                       </p>
                     )}
                   </div>
@@ -977,7 +865,7 @@ export function ProductosPanel({
                 </div>
                 <div className="space-y-1">
                   <label htmlFor="pr-sku" className={labelClass}>
-                    SKU / código
+                    SKU
                   </label>
                   <input
                     id="pr-sku"
@@ -988,14 +876,14 @@ export function ProductosPanel({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor="pr-lanz" className={labelClass}>
-                    Fecha de lanzamiento
+                  <label htmlFor="pr-codigo" className={labelClass}>
+                    Código
                   </label>
                   <input
-                    id="pr-lanz"
-                    type="date"
-                    value={form.lanzamiento}
-                    onChange={(e) => setCampo("lanzamiento", e.target.value)}
+                    id="pr-codigo"
+                    maxLength={80}
+                    value={form.codigo}
+                    onChange={(e) => setCampo("codigo", e.target.value)}
                     className={fieldClass}
                   />
                 </div>

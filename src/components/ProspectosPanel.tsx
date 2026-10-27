@@ -46,7 +46,6 @@ type FormState = {
   email: string;
   ciudad: string;
   canal_codigo: string;
-  tipo_cliente_codigo: string;
   fuente_codigo: string;
   etapa_codigo: string;
   valor_mensual_estimado: string;
@@ -75,7 +74,6 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
     email: "",
     ciudad: "",
     canal_codigo: "",
-    tipo_cliente_codigo: "",
     fuente_codigo: "",
     etapa_codigo: etapaDefault,
     valor_mensual_estimado: "",
@@ -284,7 +282,6 @@ export function ProspectosPanel({
         cargo: "",
         email: "",
         ciudad: "",
-        tipo_cliente_codigo: null,
         fuente_codigo: null,
         valor_mensual_estimado: 0,
         calificacion: 0,
@@ -326,7 +323,6 @@ export function ProspectosPanel({
         email: form.email,
         ciudad: form.ciudad,
         canal_codigo: form.canal_codigo || null,
-        tipo_cliente_codigo: form.tipo_cliente_codigo || null,
         fuente_codigo: form.fuente_codigo || null,
         etapa_codigo: form.etapa_codigo || etapaDefault,
         valor_mensual_estimado: Number(form.valor_mensual_estimado) || 0,
@@ -1009,26 +1005,6 @@ export function ProspectosPanel({
                     {catalogos.canales.map((c) => (
                       <option key={c.codigo} value={c.codigo}>
                         {c.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="dp-tipo" className={labelClass}>
-                    Tipo de cliente (precios)
-                  </label>
-                  <select
-                    id="dp-tipo"
-                    value={form.tipo_cliente_codigo}
-                    onChange={(e) =>
-                      setField("tipo_cliente_codigo", e.target.value)
-                    }
-                    className={fieldClass}
-                  >
-                    <option value="">Según el canal</option>
-                    {catalogos.tipos_cliente.map((t) => (
-                      <option key={t.codigo} value={t.codigo}>
-                        {t.nombre}
                       </option>
                     ))}
                   </select>

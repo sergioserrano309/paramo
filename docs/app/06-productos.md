@@ -11,8 +11,10 @@
 - Listado en tarjetas: línea, presentación, nombre, estado, PVP, aviso de precios por
   aprobar. Filtro por estado, búsqueda por nombre / SKU / línea. Orden del as-is:
   lanzamiento, desarrollo, activo, descontinuado y luego nombre.
-- Ficha en drawer: nombre*, PVP*, línea, estado, presentación, SKU, lanzamiento y
-  descripción; tabla de **precios por tipo de cliente** (% sobre el PVP o precio fijo) con
+- Ficha en drawer: nombre*, PVP*, línea, estado, presentación, **SKU y Código** (dos
+  campos distintos; columna `productos.codigo`, migración `20261027090000`) y descripción.
+  Se quitó la fecha de lanzamiento del formulario (la columna `lanzamiento` sigue en la base
+  sin uso); tabla de **precios por tipo de cliente** (% sobre el PVP o precio fijo) con
   precio resultante en vivo y estado (En firme / Por aprobar / Lista general).
 - Botón «Llenar con la lista general» (as-is `ppFill`).
 - Eliminar con confirmación (borrado real, como el as-is).

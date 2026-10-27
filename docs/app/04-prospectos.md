@@ -8,7 +8,7 @@
   - Tabla `prospectos` + `bitacora` (esquema; sin escritura en alta).
 - Migración `20261022193000_crear_compromisos.sql`: tabla `compromisos`.
   Tipos en `CHECK` alineados al as-is. Alta y agenda: [06-compromisos.md](./06-compromisos.md).
-- Seed `supabase/seed/002_catalogos_prospectos.sql`.
+- Seed `supabase/seed/002_catalogos_prospectos.sql` (canales nuevos: `005_canales_nuevos.sql`).
 - API:
   - `GET /api/prospectos` — listado.
   - `POST /api/prospectos` — alta (`editar` **o** `asignar`).

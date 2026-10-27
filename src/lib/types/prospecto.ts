@@ -12,10 +12,6 @@ export type EtapaCatalogo = CatalogoItem & {
   en_pipeline: boolean;
 };
 
-export type TipoClienteCatalogo = CatalogoItem & {
-  descuento_pct_default: number;
-};
-
 export type ResponsableOption = {
   id: string;
   nombre: string;
@@ -33,8 +29,6 @@ export type ProspectoListItem = {
   ciudad: string;
   canal_codigo: string | null;
   canal_nombre: string | null;
-  tipo_cliente_codigo: string | null;
-  tipo_cliente_nombre: string | null;
   fuente_codigo: string | null;
   fuente_nombre: string | null;
   etapa_codigo: string;
@@ -63,7 +57,6 @@ export type ProspectoListItem = {
 export type ProspectosCatalogos = {
   canales: CatalogoItem[];
   fuentes: CatalogoItem[];
-  tipos_cliente: TipoClienteCatalogo[];
   etapas: EtapaCatalogo[];
   responsables: ResponsableOption[];
 };
