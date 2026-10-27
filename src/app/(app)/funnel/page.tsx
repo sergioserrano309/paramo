@@ -17,9 +17,7 @@ import type {
   EtapaCatalogo,
   ProspectoListItem,
   ProspectosCatalogos,
-  ResponsableOption,
-  TipoClienteCatalogo,
-} from "@/lib/types/prospecto";
+  ResponsableOption,} from "@/lib/types/prospecto";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +28,7 @@ export default async function FunnelPage() {
   const [
     prospectosRes,
     canalesRes,
-    fuentesRes,
-    tiposRes,
-    etapasRes,
+    fuentesRes,    etapasRes,
     profilesRes,
   ] = await Promise.all([
     service
@@ -50,11 +46,6 @@ export default async function FunnelPage() {
     service
       .from("fuentes")
       .select("codigo, nombre, orden")
-      .eq("activo", true)
-      .order("orden", { ascending: true }),
-    service
-      .from("tipos_cliente")
-      .select("codigo, nombre, orden, descuento_pct_default")
       .eq("activo", true)
       .order("orden", { ascending: true }),
     service
@@ -105,9 +96,7 @@ export default async function FunnelPage() {
 
   const catalogos: ProspectosCatalogos = {
     canales: (canalesRes.data ?? []) as CatalogoItem[],
-    fuentes: (fuentesRes.data ?? []) as CatalogoItem[],
-    tipos_cliente: (tiposRes.data ?? []) as TipoClienteCatalogo[],
-    etapas: (etapasRes.data ?? []) as EtapaCatalogo[],
+    fuentes: (fuentesRes.data ?? []) as CatalogoItem[],    etapas: (etapasRes.data ?? []) as EtapaCatalogo[],
     responsables,
   };
 

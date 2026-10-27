@@ -52,7 +52,6 @@ const datosSchema = z.object({
   ),
   ciudad: optionalText(120),
   canal_codigo: optionalCodigo,
-  tipo_cliente_codigo: optionalCodigo,
   fuente_codigo: optionalCodigo,
   valor_mensual_estimado: z.preprocess(
     (v) => (v === null || v === undefined || v === "" ? 0 : v),
@@ -95,7 +94,7 @@ function clientKey(request: Request) {
 
 async function codigoActivo(
   service: SupabaseClient,
-  table: "canales" | "fuentes" | "tipos_cliente",
+  table: "canales" | "fuentes",
   codigo: string | null,
 ): Promise<boolean> {
   if (!codigo) return true;
@@ -180,9 +179,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!(await codigoActivo(service, "fuentes", body.fuente_codigo))) {
       return NextResponse.json({ error: DENIED }, { status: 422 });
     }
-    if (!(await codigoActivo(service, "tipos_cliente", body.tipo_cliente_codigo))) {
-      return NextResponse.json({ error: DENIED }, { status: 422 });
-    }
     Object.assign(patch, {
       empresa: body.empresa,
       nit: body.nit,
@@ -192,7 +188,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       email: body.email,
       ciudad: body.ciudad,
       canal_codigo: body.canal_codigo,
-      tipo_cliente_codigo: body.tipo_cliente_codigo,
+      // El canal define la lista de precios; el tipo propio del prospecto ya no se usa.
+      tipo_cliente_codigo: null,
       fuente_codigo: body.fuente_codigo,
       valor_mensual_estimado: body.valor_mensual_estimado,
       notas: body.notas,

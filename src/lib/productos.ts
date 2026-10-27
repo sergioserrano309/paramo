@@ -18,7 +18,7 @@ import type {
 } from "@/lib/types/producto";
 
 export const PRODUCTO_SELECT = `
-  id, nombre, sku, linea, presentacion, estado, precio_publico, lanzamiento,
+  id, nombre, sku, codigo, linea, presentacion, estado, precio_publico,
   descripcion, precios, precios_pendientes, creado_en, actualizado_en
 `;
 
@@ -28,11 +28,11 @@ export type ProductoRow = {
   id: string;
   nombre: string;
   sku: string;
+  codigo: string;
   linea: string;
   presentacion: string;
   estado: string;
   precio_publico: number | string;
-  lanzamiento: string | null;
   descripcion: string;
   precios: unknown;
   precios_pendientes: unknown;
@@ -74,11 +74,11 @@ export function mapProductoRow(
     id: row.id,
     nombre: row.nombre,
     sku: row.sku ?? "",
+    codigo: row.codigo ?? "",
     linea: isLineaProducto(row.linea) ? row.linea : "otra",
     presentacion: row.presentacion ?? "",
     estado: isEstadoProducto(row.estado) ? row.estado : "desarrollo",
     precio_publico: Number(row.precio_publico) || 0,
-    lanzamiento: row.lanzamiento,
     descripcion: row.descripcion ?? "",
     precios,
     precios_pendientes: pendientes,
@@ -181,13 +181,8 @@ export const productoCamposSchema = z.object({
   estado: z.enum(ESTADOS_PRODUCTO.map((e) => e.codigo) as [string, ...string[]]),
   presentacion: optionalText(80),
   sku: optionalText(80),
+  codigo: optionalText(80),
   descripcion: optionalText(2_000),
-  lanzamiento: z
-    .union([z.string(), z.null(), z.undefined()])
-    .transform((v) => (typeof v === "string" && v.trim() ? v.trim() : null))
-    .refine((v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), {
-      message: "lanzamiento",
-    }),
   precios: z.record(z.string().max(40), precioPropuesto),
 });
 

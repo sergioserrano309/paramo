@@ -8,6 +8,7 @@ import { formatCOP } from "@/lib/precios";
 import type { CotizacionResumen, ProductoInteres } from "@/lib/types/ficha";
 import { TIPOS_ACTIVIDAD } from "@/lib/actividad";
 import { CALIF_TXT } from "@/config/calificacion";
+import { FB_TIPOS } from "@/config/productos";
 import { MOTIVOS_INACTIVO } from "@/config/motivos-inactivo";
 import {
   ATAJOS_FECHA_COMPROMISO,
@@ -22,6 +23,7 @@ import {
   localDayBogota,
   todayBogota,
 } from "@/lib/format";
+import type { FeedbackProspecto } from "@/lib/productos-seguimiento";
 import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type {
   EtapaCatalogo,
@@ -59,7 +61,6 @@ type DatosForm = {
   email: string;
   ciudad: string;
   canal_codigo: string;
-  tipo_cliente_codigo: string;
   fuente_codigo: string;
   valor: string;
   notas: string;
@@ -93,7 +94,6 @@ function datosFrom(p: ProspectoListItem): DatosForm {
     email: p.email,
     ciudad: p.ciudad,
     canal_codigo: p.canal_codigo ?? "",
-    tipo_cliente_codigo: p.tipo_cliente_codigo ?? "",
     fuente_codigo: p.fuente_codigo ?? "",
     valor: String(p.valor_mensual_estimado || 0),
     notas: p.notas,
@@ -139,6 +139,9 @@ export function ProspectoDetalleDrawer({
   const [compromisos, setCompromisos] = useState<CompromisoAgendaItem[]>([]);
   const [cotizaciones, setCotizaciones] = useState<CotizacionResumen[]>([]);
   const [productos, setProductos] = useState<ProductoInteres[]>([]);
+  const [feedback, setFeedback] = useState<FeedbackProspecto[]>([]);
+  // "" = «General»: comentario sobre los productos en conjunto.
+  const [fb, setFb] = useState({ producto_id: "", tipo: FB_TIPOS[0] as string, calif: 0, texto: "" });
   const [confirmInact, setConfirmInact] = useState(false);
   const [motivoInact, setMotivoInact] = useState<string>(MOTIVOS_INACTIVO[0]);
   const [obsOpen, setObsOpen] = useState(false);
@@ -187,12 +190,14 @@ export function ProspectoDetalleDrawer({
       const relBody = (await relRes.json().catch(() => null)) as {
         cotizaciones?: CotizacionResumen[];
         productos?: ProductoInteres[];
+        feedback?: FeedbackProspecto[];
       } | null;
       if (cancel) return;
       setObservaciones(obsBody?.observaciones ?? []);
       setCompromisos(compBody?.compromisos ?? []);
       setCotizaciones(relBody?.cotizaciones ?? []);
       setProductos(relBody?.productos ?? []);
+      setFeedback(relBody?.feedback ?? []);
     })();
     return () => {
       cancel = true;
@@ -233,6 +238,32 @@ export function ProspectoDetalleDrawer({
       throw new Error(data?.error ?? "No se pudo actualizar el producto de interés.");
     }
     setProductos(data.ficha.productos);
+  }
+
+  /** Registra una retroalimentación o degustación del prospecto (producto o «General»). */
+  async function agregarFeedback() {
+    if (!fb.texto.trim() && !fb.calif) {
+      throw new Error("Escribe un comentario o califica.");
+    }
+    const res = await fetch(`/api/prospectos/${p.id}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        producto_id: fb.producto_id || null,
+        tipo: fb.tipo,
+        calif: fb.calif,
+        texto: fb.texto,
+      }),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+      feedback?: FeedbackProspecto[];
+    } | null;
+    if (!res.ok || !data?.feedback) {
+      throw new Error(data?.error ?? "No se pudo registrar la retroalimentación.");
+    }
+    setFeedback(data.feedback);
+    setFb((s) => ({ ...s, calif: 0, texto: "" }));
   }
 
   async function run(task: () => Promise<unknown>) {
@@ -796,6 +827,110 @@ export function ProspectoDetalleDrawer({
             )}
           </section>
 
+          <section>
+            <div className={secClass}>Retroalimentación y degustación</div>
+            {canEdit ? (
+              <div className="mt-2 space-y-2 rounded-lg border border-paramo-line bg-paramo-surface p-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Field label="Producto">
+                    <select
+                      disabled={busy}
+                      value={fb.producto_id}
+                      onChange={(e) => setFb((s) => ({ ...s, producto_id: e.target.value }))}
+                      className={fieldClass}
+                    >
+                      <option value="">General</option>
+                      {productos.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Tipo">
+                    <select
+                      disabled={busy}
+                      value={fb.tipo}
+                      onChange={(e) => setFb((s) => ({ ...s, tipo: e.target.value }))}
+                      className={fieldClass}
+                    >
+                      {FB_TIPOS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="space-y-1">
+                  <span className={labelClass}>Calificación</span>
+                  <div role="group" aria-label="Calificación del producto" className="flex">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-label={`${n} de 5`}
+                        onClick={() => setFb((s) => ({ ...s, calif: s.calif === n ? 0 : n }))}
+                        className={cn(
+                          "min-h-11 min-w-9 text-2xl leading-none",
+                          n <= fb.calif ? "text-paramo-olive" : "text-paramo-line",
+                        )}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Field label="Comentario">
+                  <textarea
+                    rows={2}
+                    maxLength={1000}
+                    disabled={busy}
+                    value={fb.texto}
+                    onChange={(e) => setFb((s) => ({ ...s, texto: e.target.value }))}
+                    placeholder="Ej. Gustó la textura, piden empaque más grande"
+                    className={cn(fieldClass, "py-2")}
+                  />
+                </Field>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(agregarFeedback)}
+                    className={btnPri}
+                  >
+                    Agregar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {feedback.length === 0 ? (
+              <p className="mt-2 text-sm text-paramo-muted">
+                Aún no hay retroalimentación de este prospecto.
+              </p>
+            ) : (
+              <ul className="mt-2 divide-y divide-paramo-line rounded-lg border border-paramo-line bg-paramo-surface">
+                {feedback.map((f) => (
+                  <li key={f.id} className="space-y-0.5 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-paramo-muted">
+                      <b className="text-paramo-fg">{f.producto_nombre}</b>
+                      <span>
+                        {f.tipo} · {formatDateCompact(f.fecha)}
+                        {f.usuario_nombre !== "—" ? ` · ${f.usuario_nombre}` : ""}
+                      </span>
+                      {f.calif ? (
+                        <span className="text-paramo-olive" aria-label={`${f.calif} de 5`}>
+                          {"★".repeat(f.calif)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {f.texto ? <p className="text-paramo-fg">{f.texto}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           <form
             className="grid gap-3 sm:grid-cols-2"
             onSubmit={(event) => {
@@ -811,7 +946,6 @@ export function ProspectoDetalleDrawer({
                   email: form.email,
                   ciudad: form.ciudad,
                   canal_codigo: form.canal_codigo || null,
-                  tipo_cliente_codigo: form.tipo_cliente_codigo || null,
                   fuente_codigo: form.fuente_codigo || null,
                   valor_mensual_estimado: form.valor ? Number(form.valor) : 0,
                   notas: form.notas,
@@ -889,23 +1023,6 @@ export function ProspectoDetalleDrawer({
               >
                 <option value="">—</option>
                 {catalogos.canales.map((c) => (
-                  <option key={c.codigo} value={c.codigo}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Tipo de cliente (precios)">
-              <select
-                disabled={!canEdit || busy}
-                value={form.tipo_cliente_codigo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tipo_cliente_codigo: e.target.value }))
-                }
-                className={fieldClass}
-              >
-                <option value="">Según el canal</option>
-                {catalogos.tipos_cliente.map((c) => (
                   <option key={c.codigo} value={c.codigo}>
                     {c.nombre}
                   </option>

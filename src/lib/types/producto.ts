@@ -23,11 +23,11 @@ export type ProductoListItem = {
   id: string;
   nombre: string;
   sku: string;
+  codigo: string;
   linea: LineaProducto;
   presentacion: string;
   estado: EstadoProducto;
   precio_publico: number;
-  lanzamiento: string | null;
   descripcion: string;
   precios: PreciosProducto;
   precios_pendientes: PreciosPendientes;

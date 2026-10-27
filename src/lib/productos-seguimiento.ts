@@ -31,6 +31,8 @@ export async function resumenSeguimientoProductos(
     (out[id] ??= { interesados: 0, opiniones: 0, promedio: 0, suma: 0, conCalif: 0 });
   for (const r of interes.data ?? []) get(r.producto_id as string).interesados += 1;
   for (const r of opiniones.data ?? []) {
+    // null = comentario «General» de un prospecto: no pertenece a ningún producto.
+    if (!r.producto_id) continue;
     const o = get(r.producto_id as string);
     o.opiniones += 1;
     const c = Number(r.calif) || 0;
@@ -107,4 +109,56 @@ export async function cargarSeguimientoProducto(
       usuario_nombre: o.usuario?.nombre || "—",
     })),
   };
+}
+
+/** Opinión registrada desde la ficha de un prospecto. `producto_id` null = «General». */
+export type FeedbackProspecto = {
+  id: string;
+  fecha: string;
+  tipo: string;
+  calif: number;
+  texto: string;
+  producto_id: string | null;
+  producto_nombre: string;
+  usuario_nombre: string;
+};
+
+type FilaFeedbackProspecto = {
+  id: string;
+  fecha: string;
+  tipo: string;
+  calif: number;
+  texto: string;
+  producto_id: string | null;
+  producto: { nombre: string } | null;
+  usuario: { nombre: string } | null;
+};
+
+/** Retroalimentación y degustaciones de un prospecto, la más reciente primero. */
+export async function cargarFeedbackProspecto(
+  service: SupabaseClient,
+  prospectoId: string,
+): Promise<FeedbackProspecto[] | null> {
+  const { data, error } = await service
+    .from("producto_feedback")
+    .select(
+      `id, fecha, tipo, calif, texto, producto_id,
+       producto:productos!producto_feedback_producto_id_fkey ( nombre ),
+       usuario:profiles!producto_feedback_usuario_id_fkey ( nombre )`,
+    )
+    .eq("prospecto_id", prospectoId)
+    .order("fecha", { ascending: false })
+    .order("creado_en", { ascending: false })
+    .limit(200);
+  if (error) return null;
+  return ((data ?? []) as unknown as FilaFeedbackProspecto[]).map((f) => ({
+    id: f.id,
+    fecha: f.fecha,
+    tipo: f.tipo,
+    calif: Number(f.calif) || 0,
+    texto: f.texto ?? "",
+    producto_id: f.producto_id,
+    producto_nombre: f.producto?.nombre ?? "General",
+    usuario_nombre: f.usuario?.nombre || "—",
+  }));
 }

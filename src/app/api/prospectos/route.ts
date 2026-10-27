@@ -53,7 +53,6 @@ const createProspectoSchema = z.object({
   ),
   ciudad: optionalText(120),
   canal_codigo: optionalCodigo,
-  tipo_cliente_codigo: optionalCodigo,
   fuente_codigo: optionalCodigo,
   etapa_codigo: z
     .union([z.string(), z.null(), z.undefined()])
@@ -167,7 +166,7 @@ export async function POST(request: Request) {
   }
 
   async function codigoActivo(
-    table: "canales" | "fuentes" | "tipos_cliente",
+    table: "canales" | "fuentes",
     codigo: string | null,
   ): Promise<boolean> {
     if (!codigo) return true;
@@ -186,9 +185,6 @@ export async function POST(request: Request) {
   if (!(await codigoActivo("fuentes", body.fuente_codigo))) {
     return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
   }
-  if (!(await codigoActivo("tipos_cliente", body.tipo_cliente_codigo))) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
-  }
 
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Bogota",
@@ -205,7 +201,6 @@ export async function POST(request: Request) {
       email: body.email,
       ciudad: body.ciudad,
       canal_codigo: body.canal_codigo,
-      tipo_cliente_codigo: body.tipo_cliente_codigo,
       fuente_codigo: body.fuente_codigo,
       etapa_codigo: body.etapa_codigo,
       valor_mensual_estimado: body.valor_mensual_estimado,

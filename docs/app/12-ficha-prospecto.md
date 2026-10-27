@@ -20,9 +20,20 @@
   merge): lista de cotizaciones con enlace a cada una y «+ Nueva cotización» (abre
   `/cotizaciones?nueva=1&prospecto=ID`), y los productos del catálogo marcables como de
   interés.
-- **Productos:** «Prospectos interesados» y «Retroalimentación y degustaciones» (tipo,
-  cliente, calificación 1–5, comentario) en la ficha; en las tarjetas, interesados y
-  calificación promedio. **Dashboard:** «Productos nuevos» muestra interesados y promedio.
+- **Retroalimentación y degustación en la ficha del prospecto** (entre «Productos de interés»
+  y «Datos»): se pueden registrar varias, cada una con **producto** (lista del catálogo o
+  «General», para comentarios sobre los productos en conjunto), tipo, calificación 1–5 y
+  comentario. Se guardan en `producto_feedback` con `prospecto_id`; `producto_id` null =
+  «General». La ficha del producto sigue mostrando sus opiniones (con el nombre del
+  prospecto) pero **ya no permite crearlas**: se registran desde el prospecto. En las
+  tarjetas de producto, interesados y calificación promedio (las «General» no cuentan para
+  ningún producto). **Dashboard:** «Productos nuevos» muestra interesados y promedio.
+- **Canal define los precios:** el formulario del prospecto (alta rápida, alta completa,
+  Funnel y panel de detalle) ya no pregunta «Tipo de cliente (precios)». La lista de precios
+  de las cotizaciones sale de `canales.tipo_cliente_codigo` (cotizaciones aún permite
+  cambiar el tipo en cada cotización). Canales: Distribuidor, Tienda, Mayorista, Grandes
+  Superficies, HORECA, Corporativo y Consumidor Final (seed `005_canales_nuevos.sql`).
+  Mayorista usa por ahora la lista de Distribuidor.
 - **Supervisión:** KPI «Contactos con clientes» y «Avances en el funnel» y la columna
   «Contactos (N d)» de la cartera salen del historial `prospectos.actividad`; la bitácora
   enlaza a la ficha del prospecto, producto o cotización (`?abrir=ID`).
@@ -35,7 +46,8 @@
 |---|---|---|
 | `PATCH` | `/api/prospectos/[id]` | `accion`: datos, calificación, responsable, inactivar, reactivar, actividad. Editar = `editar` o ser el responsable; reasignar = además `asignar` |
 | `DELETE` | `/api/prospectos/[id]` | Quien puede editar; borra también sus compromisos |
-| `GET` | `/api/prospectos/[id]/relacionados` | Acceso a Prospectos: cotizaciones del prospecto y productos de interés |
+| `GET` | `/api/prospectos/[id]/relacionados` | Acceso a Prospectos: cotizaciones, productos de interés y retroalimentación del prospecto |
+| `POST` | `/api/prospectos/[id]/feedback` | Quien puede editar el prospecto: `{ producto_id | null, tipo, calif, texto }` (null = General) |
 | `POST` | `/api/prospectos/[id]/interes` | Quien puede editar: marca / quita un producto |
 | `GET` | `/api/productos/[id]/seguimiento` | Interesados y opiniones |
 | `POST` | `/api/productos/[id]/feedback` | `editar` o `asignar` |

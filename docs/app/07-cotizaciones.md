@@ -6,7 +6,7 @@
   Todas), tabla, drawer con el formulario completo y acciones por estado.
 - Migración `20261023110000_crear_cotizaciones.sql`: tabla `cotizaciones` (RLS + `revoke`,
   trigger de numeración y de `actualizado_en`) y columna `canales.tipo_cliente_codigo`.
-- Seed `supabase/seed/004_canal_tipo_cliente.sql` (tipo de cliente por defecto de cada canal).
+- Seed `supabase/seed/004_canal_tipo_cliente.sql` (tipo de cliente por defecto de cada canal); los canales vigentes y su tipo los fija `005_canales_nuevos.sql`.
 - PDF en el navegador (`jspdf` + `jspdf-autotable`, cargados bajo demanda) con logo
   (`public/logo-paramo.jpg`, copia del as-is), marca de agua si no es versión final y datos
   de marca en `src/config/empresa.ts`.
