@@ -120,19 +120,3 @@ export async function cargarFicha(
     })),
   };
 }
-
-/** Un código de catálogo (canal, fuente, tipo de cliente) debe existir y estar activo. */
-export async function codigoCatalogoActivo(
-  service: SupabaseClient,
-  tabla: "canales" | "fuentes" | "tipos_cliente",
-  codigo: string | null,
-): Promise<boolean> {
-  if (!codigo) return true;
-  const { data, error } = await service
-    .from(tabla)
-    .select("codigo")
-    .eq("codigo", codigo)
-    .eq("activo", true)
-    .maybeSingle();
-  return !error && !!data;
-}

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { isRol } from "@/config/roles";
 import { createAuthClient } from "@/lib/supabase-auth";
@@ -33,8 +34,12 @@ function toProfile(row: ProfileRow): Profile | null {
 /**
  * Sesión Auth + perfil de negocio reconsultado (no confiar solo en JWT).
  * Devuelve null si no hay sesión, perfil inexistente o usuario inactivo.
+ *
+ * `cache` de React la memoriza durante un mismo render: el layout y la página la llaman
+ * cada uno y antes pagaban dos veces el viaje a Supabase Auth y la consulta de `profiles`
+ * en cada navegación. La autorización sigue verificándose en cada request.
  */
-export async function getAuthContext(): Promise<AuthContext | null> {
+export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   if (!hasSupabaseAuthConfig() || !hasSupabaseServiceConfig()) {
     return null;
   }
@@ -63,7 +68,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     email: user.email ?? profile.email,
     profile,
   };
-}
+});
 
 /** Para layouts del CRM: sin contexto válido → /login. */
 export async function requireAuthContext(): Promise<AuthContext> {

@@ -19,7 +19,7 @@
 | [09-compromisos.md](./09-compromisos.md) | Notas del hito paralelo; la agenda vigente está en 06 |
 | [10-supervision.md](./10-supervision.md) | Supervisión: KPI, observaciones, listas de precios, bitácora |
 | [11-dashboard.md](./11-dashboard.md) | Dashboard: KPI, agenda, funnel, ventas y alertas |
-| [12-ficha-prospecto.md](./12-ficha-prospecto.md) | Drawer de main, rutas de ProspectoFicha, tablas por validar |
+| [12-ficha-prospecto.md](./12-ficha-prospecto.md) | Panel del prospecto: cotizaciones, productos de interés, retroalimentación |
 | [13-shell.md](./13-shell.md) | Menú móvil, contadores, tema y atajos de teclado |
 
 ## Módulos (rutas)
@@ -42,8 +42,7 @@ Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
 `PATCH /api/prospectos/[id]/etapa`,
 `GET/POST /api/prospectos/[id]/observaciones`,
 `PATCH/DELETE /api/prospectos/[id]/observaciones/[obsId]`,
-`POST /api/prospectos/[id]/actividad`, `POST /api/prospectos/[id]/activo`,
-`POST /api/prospectos/[id]/interes`,
+`POST /api/prospectos/[id]/interes`, `GET /api/prospectos/[id]/relacionados`,
 `POST /api/compromisos`, `GET /api/compromisos?prospecto_id=`,
 `PATCH/DELETE /api/compromisos/[id]`, `POST /api/compromisos/[id]/hecho`,
 `GET/POST /api/productos`, `PATCH/DELETE /api/productos/[id]`,

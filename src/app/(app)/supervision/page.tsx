@@ -20,18 +20,22 @@ export default async function SupervisionPage({ searchParams }: PageProps) {
   const dias = PERIODOS.find((d) => String(d) === diasParam) ?? 7;
   const service = createServiceClient();
 
-  const tipos = await cargarTiposClientePrecio(service);
-  const [datos, observaciones, eventos, acciones, aprobaciones, prospectosRes] =
+  // Los tipos de cliente se piden en paralelo con el resto (antes se esperaban primero).
+  const tiposPromesa = cargarTiposClientePrecio(service);
+  const [tipos, datos, observaciones, eventos, acciones, aprobaciones, prospectosRes] =
     await Promise.all([
+      tiposPromesa,
       cargarSupervision(service, dias),
       cargarObservaciones(service, 50),
       cargarBitacora(service),
       cargarAccionesBitacora(service),
-      cargarAprobaciones(
-        service,
-        ctx.profile.rol,
-        ctx.userId,
-        new Map((tipos ?? []).map((t) => [t.codigo, t.nombre])),
+      tiposPromesa.then((t) =>
+        cargarAprobaciones(
+          service,
+          ctx.profile.rol,
+          ctx.userId,
+          new Map((t ?? []).map((x) => [x.codigo, x.nombre])),
+        ),
       ),
       service
         .from("prospectos")
