@@ -43,8 +43,9 @@ hasta terminarlos. Qué se hizo:
 hasta que venza su token (≤ 1 h). Desactivar al usuario o cambiarle el rol surte efecto de
 inmediato porque `profiles` se consulta en cada petición.
 
-**Pendiente de medir:** región de Supabase frente a la de Vercel (`iad1`); si están lejos, cada
-viaje cuesta más.
+**Región:** Supabase está en `us-west-2` (Oregón) y las funciones de Vercel corrían en `iad1`
+(Virginia, ~65 ms por viaje, y un módulo hace 5–8). `vercel.json` fija `regions: ["pdx1"]`
+(Portland, junto a Supabase). Si no mejora, quitar el archivo vuelve al comportamiento anterior.
 
 ## Novedades respecto al as-is
 
