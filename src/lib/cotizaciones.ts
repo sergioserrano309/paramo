@@ -155,14 +155,21 @@ function idsDePerfiles(rows: CotizacionRow[]): string[] {
   return [...ids];
 }
 
+/**
+ * Cotizaciones, de la más reciente a la más antigua. Con `estados` solo trae esos: los
+ * paneles de aprobación del Dashboard y del menú necesitan unas pocas, no las 500.
+ */
 export async function cargarCotizaciones(
   service: SupabaseClient,
+  opciones: { estados?: readonly string[] } = {},
 ): Promise<CotizacionListItem[] | null> {
-  const { data, error } = await service
+  let query = service
     .from("cotizaciones")
     .select(COTIZACION_SELECT)
     .order("numero", { ascending: false })
     .limit(COTIZACIONES_LIMIT);
+  if (opciones.estados?.length) query = query.in("estado", [...opciones.estados]);
+  const { data, error } = await query;
   if (error) return null;
   const rows = (data ?? []) as unknown as CotizacionRow[];
   const nombres = await nombresDePerfiles(service, idsDePerfiles(rows));

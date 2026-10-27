@@ -44,18 +44,23 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     return null;
   }
 
+  // getClaims valida la firma y la vigencia del token en el servidor, sin viajar a Supabase
+  // Auth (getUser sí viaja: era un viaje de red extra por cada navegación y por cada API).
+  // Lo que autoriza de verdad es el perfil reconsultado abajo: si desactivan al usuario o
+  // le cambian el rol, el efecto es inmediato. Una sesión cerrada desde otro dispositivo
+  // seguiría válida hasta que venza su token (≤ 1 h).
   const auth = await createAuthClient();
-  const {
-    data: { user },
-  } = await auth.auth.getUser();
+  const { data: claimsData } = await auth.auth.getClaims();
+  const claims = claimsData?.claims;
+  const userId = typeof claims?.sub === "string" ? claims.sub : null;
 
-  if (!user) return null;
+  if (!userId) return null;
 
   const service = createServiceClient();
   const { data, error } = await service
     .from("profiles")
     .select("id, email, nombre, rol, activo")
-    .eq("id", user.id)
+    .eq("id", userId)
     .maybeSingle();
 
   if (error || !data) return null;
@@ -64,8 +69,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   if (!profile || !profile.activo) return null;
 
   return {
-    userId: user.id,
-    email: user.email ?? profile.email,
+    userId,
+    email: typeof claims?.email === "string" && claims.email ? claims.email : profile.email,
     profile,
   };
 });
