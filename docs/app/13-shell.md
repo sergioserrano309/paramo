@@ -7,8 +7,9 @@
 - **Contadores del menú** (as-is `navHTML`): Compromisos (vencidos), Cotizaciones
   (descuentos por aprobar para el supervisor; rechazadas para el comercial), Productos
   (precios por aprobar, supervisor), Dashboard (observaciones por atender, comercial) y
-  Supervisión (observaciones abiertas). Se calculan en el servidor en cada carga con
-  consultas de conteo (`src/lib/insignias.ts`).
+  Supervisión (observaciones abiertas). Se calculan en el servidor con consultas de conteo
+  (`src/lib/insignias.ts`) y **se guardan 30 segundos por rol** (`unstable_cache`): pedirlos en
+  cada navegación frenaba el cambio entre módulos. Un contador puede ir hasta 30 s atrasado.
 - **Tema claro / oscuro** (`ThemeToggle`): botón en el menú y en la barra móvil; la
   preferencia queda en `localStorage` de este navegador.
 - **Atajos de teclado:** **N** abre un prospecto nuevo y **C** un compromiso nuevo (no actúan

@@ -107,14 +107,16 @@ export default async function DashboardPage() {
   const service = createServiceClient();
   const rol = ctx.profile.rol;
 
-  const tipos = await cargarTiposClientePrecio(service);
+  // Todo en una sola ronda: los tipos de cliente ya no se esperan antes de lanzar el resto.
   const [datos, aprobaciones, resumenProductos] = await Promise.all([
     cargarDashboard(service, rol, ctx.userId),
-    cargarAprobaciones(
-      service,
-      rol,
-      ctx.userId,
-      new Map((tipos ?? []).map((t) => [t.codigo, t.nombre])),
+    cargarTiposClientePrecio(service).then((tipos) =>
+      cargarAprobaciones(
+        service,
+        rol,
+        ctx.userId,
+        new Map((tipos ?? []).map((t) => [t.codigo, t.nombre])),
+      ),
     ),
     resumenSeguimientoProductos(service),
   ]);

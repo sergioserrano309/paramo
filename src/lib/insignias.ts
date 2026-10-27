@@ -1,16 +1,34 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { unstable_cache } from "next/cache";
 import type { Modulo } from "@/config/permissions";
 import type { Rol } from "@/config/roles";
 import { can } from "@/lib/can";
 import { todayBogota } from "@/lib/format";
+import { createServiceClient } from "@/lib/supabase-server";
 
 export type Insignia = { n: number; tono: "alerta" | "marca" | "suave" };
+
+/** Los contadores solo dependen del rol, no del usuario: se comparten durante este lapso. */
+const SEGUNDOS_CACHE = 30;
+
+/**
+ * Contadores del menú, con caché corta. El layout los pedía en cada navegación (4 consultas
+ * a Supabase) y eso frenaba el cambio entre módulos; un contador con hasta 30 s de retraso
+ * es aceptable en un menú.
+ */
+export function cargarInsignias(rol: Rol): Promise<Partial<Record<Modulo, Insignia>>> {
+  return unstable_cache(
+    () => calcularInsignias(createServiceClient(), rol),
+    ["menu-insignias", rol],
+    { revalidate: SEGUNDOS_CACHE },
+  )();
+}
 
 /**
  * Contadores del menú (as-is navHTML): compromisos vencidos, observaciones por atender,
  * precios y descuentos por aprobar. Son consultas de conteo; no traen filas.
  */
-export async function cargarInsignias(
+async function calcularInsignias(
   service: SupabaseClient,
   rol: Rol,
 ): Promise<Partial<Record<Modulo, Insignia>>> {
