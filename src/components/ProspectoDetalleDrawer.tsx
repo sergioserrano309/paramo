@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { estadoCotizacion } from "@/config/cotizaciones";
+import { formatCOP } from "@/lib/precios";
+import type { CotizacionResumen, ProductoInteres } from "@/lib/types/ficha";
 import { TIPOS_ACTIVIDAD } from "@/lib/actividad";
 import { CALIF_TXT } from "@/config/calificacion";
 import { MOTIVOS_INACTIVO } from "@/config/motivos-inactivo";
@@ -133,6 +137,8 @@ export function ProspectoDetalleDrawer({
   const [form, setForm] = useState(() => datosFrom(p));
   const [observaciones, setObservaciones] = useState<ObservacionItem[]>([]);
   const [compromisos, setCompromisos] = useState<CompromisoAgendaItem[]>([]);
+  const [cotizaciones, setCotizaciones] = useState<CotizacionResumen[]>([]);
+  const [productos, setProductos] = useState<ProductoInteres[]>([]);
   const [confirmInact, setConfirmInact] = useState(false);
   const [motivoInact, setMotivoInact] = useState<string>(MOTIVOS_INACTIVO[0]);
   const [obsOpen, setObsOpen] = useState(false);
@@ -167,9 +173,10 @@ export function ProspectoDetalleDrawer({
   useEffect(() => {
     let cancel = false;
     void (async () => {
-      const [obsRes, compRes] = await Promise.all([
+      const [obsRes, compRes, relRes] = await Promise.all([
         fetch(`/api/prospectos/${p.id}/observaciones`),
         fetch(`/api/compromisos?prospecto_id=${p.id}`),
+        fetch(`/api/prospectos/${p.id}/relacionados`),
       ]);
       const obsBody = (await obsRes.json().catch(() => null)) as {
         observaciones?: ObservacionItem[];
@@ -177,9 +184,15 @@ export function ProspectoDetalleDrawer({
       const compBody = (await compRes.json().catch(() => null)) as {
         compromisos?: CompromisoAgendaItem[];
       } | null;
+      const relBody = (await relRes.json().catch(() => null)) as {
+        cotizaciones?: CotizacionResumen[];
+        productos?: ProductoInteres[];
+      } | null;
       if (cancel) return;
       setObservaciones(obsBody?.observaciones ?? []);
       setCompromisos(compBody?.compromisos ?? []);
+      setCotizaciones(relBody?.cotizaciones ?? []);
+      setProductos(relBody?.productos ?? []);
     })();
     return () => {
       cancel = true;
@@ -203,6 +216,23 @@ export function ProspectoDetalleDrawer({
     setForm(datosFrom(data.prospecto));
     router.refresh();
     return data.prospecto;
+  }
+
+  /** Marca o quita un producto de interés (la ruta devuelve la ficha ya actualizada). */
+  async function toggleInteres(productoId: string, interesado: boolean) {
+    const res = await fetch(`/api/prospectos/${p.id}/interes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ producto_id: productoId, interesado }),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+      ficha?: { productos: ProductoInteres[] };
+    } | null;
+    if (!res.ok || !data?.ficha) {
+      throw new Error(data?.error ?? "No se pudo actualizar el producto de interés.");
+    }
+    setProductos(data.ficha.productos);
   }
 
   async function run(task: () => Promise<unknown>) {
@@ -660,11 +690,37 @@ export function ProspectoDetalleDrawer({
           <section>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className={secClass}>Cotizaciones</span>
-              <button type="button" disabled className={cn(btnGhost, "cursor-not-allowed opacity-60")}>
-                + Nueva cotización
-              </button>
+              {canEdit && p.activo ? (
+                <Link href={`/cotizaciones?nueva=1&prospecto=${p.id}`} className={btnGhost}>
+                  + Nueva cotización
+                </Link>
+              ) : null}
             </div>
-            <p className="text-sm text-paramo-muted">Sin cotizaciones.</p>
+            {cotizaciones.length === 0 ? (
+              <p className="text-sm text-paramo-muted">Sin cotizaciones.</p>
+            ) : (
+              <ul className="divide-y divide-paramo-line rounded-lg border border-paramo-line bg-paramo-surface">
+                {cotizaciones.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="min-w-0">
+                      <Link
+                        href={`/cotizaciones?abrir=${c.id}`}
+                        className="block truncate text-sm font-semibold text-paramo-teal-ink hover:underline"
+                      >
+                        {c.numero}
+                      </Link>
+                      <span className="text-xs text-paramo-muted">
+                        {estadoCotizacion(c.estado).nombre} · {formatDateCompact(c.fecha)}
+                        {c.desc_pct ? ` · desc. ${c.desc_pct}%` : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-sm font-bold text-paramo-fg">
+                      {formatCOP(c.total)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section>
@@ -710,7 +766,34 @@ export function ProspectoDetalleDrawer({
 
           <section>
             <div className={secClass}>Productos de interés</div>
-            <p className="mt-1 text-sm text-paramo-muted">Próximamente.</p>
+            {productos.length === 0 ? (
+              <p className="mt-1 text-sm text-paramo-muted">
+                No hay productos en el catálogo todavía.
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {productos.map((x) => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    aria-pressed={x.interesado}
+                    disabled={!canEdit || busy}
+                    onClick={() => void run(() => toggleInteres(x.id, !x.interesado))}
+                    className={cn(
+                      "min-h-9 rounded-full border px-3 text-xs font-bold disabled:cursor-not-allowed",
+                      x.interesado
+                        ? "border-paramo-teal bg-paramo-teal-soft text-paramo-teal-ink"
+                        : "border-paramo-line text-paramo-muted hover:bg-paramo-surface-2",
+                    )}
+                  >
+                    {x.nombre}
+                    {x.estado !== "activo"
+                      ? ` · ${x.estado === "desarrollo" ? "en desarrollo" : x.estado}`
+                      : ""}
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
           <form
