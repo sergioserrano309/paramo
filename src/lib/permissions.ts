@@ -8,8 +8,13 @@ import { can, canAccessModule } from "@/lib/can";
 export {
   can,
   canAccessModule,
+  canAsignarResponsable,
+  canCreateCompromiso,
   canCreateProspecto,
+  canEditCompromiso,
   canEditProspecto,
+  canToggleCompromiso,
+  puedeVerCompromiso,
 } from "@/lib/can";
 
 export function assertCan(rol: Parameters<typeof can>[0], accion: Accion): void {

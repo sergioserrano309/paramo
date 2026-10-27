@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Rol } from "@/config/roles";
 import { STALE_DAYS } from "@/config/funnel";
-import { cargarCompromisos } from "@/lib/compromisos";
+import { fetchCompromisosAgenda } from "@/lib/compromisos";
 import { sumarDias } from "@/lib/fechas";
 import { daysBetween, localDayBogota, todayBogota } from "@/lib/format";
 import { cargarObservaciones } from "@/lib/observaciones";
 import { cargarProductos } from "@/lib/productos";
-import type { CompromisoItem } from "@/lib/types/compromiso";
+import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type { ObservacionItem } from "@/lib/types/observacion";
 import type { ProductoListItem } from "@/lib/types/producto";
 import type { VentaMes, VentaResumenFila } from "@/lib/types/venta";
@@ -44,7 +44,7 @@ export type DatosDashboard = {
   pipelinePonderado: number;
   prospectosActivos: number;
   vencidos: number;
-  agenda: CompromisoItem[];
+  agenda: CompromisoAgendaItem[];
   agendaTotal: number;
   funnel: EtapaDashboard[];
   ganados: number;
@@ -70,6 +70,7 @@ const pct = (a: number, b: number): number | null => (b ? ((a - b) / b) * 100 : 
 export async function cargarDashboard(
   service: SupabaseClient,
   rol: Rol,
+  userId: string,
 ): Promise<DatosDashboard | null> {
   const hoy = todayBogota();
 
@@ -84,7 +85,7 @@ export async function cargarDashboard(
         .select("codigo, nombre, orden, probabilidad, en_pipeline")
         .eq("activo", true)
         .order("orden", { ascending: true }),
-      cargarCompromisos(service, rol),
+      fetchCompromisosAgenda(service, rol === "supervisor" ? null : userId),
       cargarMesesVentas(service),
       cargarProductos(service),
       rol === "comercial" ? cargarObservaciones(service, 50) : Promise.resolve([]),

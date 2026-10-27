@@ -1,7 +1,7 @@
 import type { Rol } from "@/config/roles";
-import type { CompromisoItem } from "@/lib/types/compromiso";
+import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 
-type Basico = Pick<CompromisoItem, "responsable_id" | "responsable_rol" | "creado_por">;
+type Basico = Pick<CompromisoAgendaItem, "responsable_id" | "responsable_rol" | "creado_por">;
 
 /**
  * Reglas del as-is sobre quién ve y toca cada compromiso (visC / canToggleC / canEditC).

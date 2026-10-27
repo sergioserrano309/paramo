@@ -27,8 +27,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" data-theme="light">
+    <html lang="es" data-theme="light" suppressHydrationWarning>
       <body className={`${arvo.variable} ${mulish.variable} antialiased`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if(localStorage.getItem("paramo-crm-tema")==="dark")document.documentElement.setAttribute("data-theme","dark")}catch(e){}})();`,
+          }}
+        />
         {children}
       </body>
     </html>

@@ -10,11 +10,13 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import { ProspectoFicha } from "@/components/ProspectoFicha";
+import { CompromisoFechaText } from "@/components/CompromisoFechaText";
+import { ProspectoDetalleDrawer } from "@/components/ProspectoDetalleDrawer";
+import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { ETAPA_COL_COLOR, STALE_DAYS } from "@/config/funnel";
-import { textoFecha } from "@/lib/fechas";
 import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
+import { canEditProspecto } from "@/lib/can";
 import { cn } from "@/lib/cn";
 import {
   daysBetween,
@@ -23,7 +25,7 @@ import {
   localDayBogota,
   todayBogota,
 } from "@/lib/format";
-import { canEditProspecto } from "@/lib/can";
+import type { ProximoCompromiso } from "@/lib/types/compromiso";
 import type {
   EtapaCatalogo,
   ProspectoListItem,
@@ -37,14 +39,8 @@ type FunnelPanelProps = {
   defaultResponsableId: string;
   userId: string;
   userRol: Rol;
+  proximosPorProspecto: Record<string, ProximoCompromiso>;
 };
-
-const CALIF_TXT = [
-  "Sin calificar",
-  "Potencial bajo",
-  "Potencial medio",
-  "Potencial alto",
-] as const;
 
 type FormState = {
   empresa: string;
@@ -84,11 +80,6 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
   };
 }
 
-function stars(n: number) {
-  const v = Math.max(0, Math.min(3, n || 0));
-  return "★".repeat(v) + "☆".repeat(3 - v);
-}
-
 function lastTouchDay(p: ProspectoListItem): string {
   if (p.ultimo_contacto) return p.ultimo_contacto;
   return localDayBogota(p.creado_en);
@@ -107,12 +98,14 @@ export function FunnelPanel({
   defaultResponsableId,
   userId,
   userRol,
+  proximosPorProspecto,
 }: FunnelPanelProps) {
   function canEdit(p: ProspectoListItem) {
     return canEditProspecto(userRol, userId, p.responsable_id);
   }
   const router = useRouter();
   const createTitleId = useId();
+  const detailTitleId = useId();
   const lostTitleId = useId();
 
   const etapas = useMemo(
@@ -240,6 +233,9 @@ export function FunnelPanel({
     0,
   );
 
+  const openProspecto = openId
+    ? (prospectos.find((p) => p.id === openId) ?? null)
+    : null;
   const lostProspecto = lostForId
     ? (prospectos.find((p) => p.id === lostForId) ?? null)
     : null;
@@ -501,6 +497,7 @@ export function FunnelPanel({
                   catalogos.responsables.find(
                     (r) => r.id === p.responsable_id,
                   )?.rol ?? userRol;
+                const nc = proximosPorProspecto[p.id];
 
                 return (
                   <div
@@ -538,26 +535,16 @@ export function FunnelPanel({
                         className="text-paramo-olive"
                         title={CALIF_TXT[p.calificacion] ?? CALIF_TXT[0]}
                       >
-                        {stars(p.calificacion)}
+                        {stars3(p.calificacion)}
                       </span>
                       {p.canal_nombre ? (
                         <span>{p.canal_nombre}</span>
                       ) : null}
                     </div>
-                    {p.proximo_compromiso ? (
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-paramo-muted">
-                        <span
-                          className={
-                            p.proximo_compromiso.fecha < t
-                              ? "font-bold text-paramo-bad"
-                              : p.proximo_compromiso.fecha === t
-                                ? "font-bold text-paramo-warn"
-                                : "text-paramo-fg"
-                          }
-                        >
-                          {textoFecha(p.proximo_compromiso.fecha)}
-                        </span>
-                        <span className="truncate">{p.proximo_compromiso.titulo}</span>
+                    {nc ? (
+                      <div className="text-xs text-paramo-muted">
+                        <CompromisoFechaText fecha={nc.fecha} />{" "}
+                        {nc.titulo}
                       </div>
                     ) : null}
                     <div className="flex items-center justify-between gap-1.5 text-xs">
@@ -671,25 +658,30 @@ export function FunnelPanel({
         </div>
       ) : null}
 
-      {/* Ficha completa del prospecto (la misma que en /prospectos). */}
-      {openId ? (
-        <ProspectoFicha
-          key={openId}
-          prospectoId={openId}
+      {/* Drawer detalle (ver + etapa) — mismo que click en listado Prospectos */}
+      {openProspecto ? (
+        <ProspectoDetalleDrawer
+          titleId={detailTitleId}
+          prospecto={openProspecto}
+          etapas={etapas}
+          etapaIndex={etapaIndex}
+          canMove={canEdit(openProspecto)}
+          moving={movingId === openProspecto.id}
+          onClose={() => setOpenId(null)}
+          onSetStage={(k) => void moveToStage(openProspecto.id, k)}
           catalogos={catalogos}
+          prospectosAgenda={prospectos}
           userId={userId}
           userRol={userRol}
-          onCerrar={() => {
-            setOpenId(null);
-            router.refresh();
-          }}
-          onActualizado={(p) =>
-            // Un prospecto inactivado sale del tablero (el funnel solo muestra activos).
+          onUpdated={(next) =>
             setProspectos((prev) =>
-              p.activo ? prev.map((x) => (x.id === p.id ? p : x)) : prev.filter((x) => x.id !== p.id),
+              prev.map((item) => (item.id === next.id ? next : item)),
             )
           }
-          onEliminado={(id) => setProspectos((prev) => prev.filter((x) => x.id !== id))}
+          onDeleted={(id) => {
+            setProspectos((prev) => prev.filter((item) => item.id !== id));
+            setOpenId(null);
+          }}
         />
       ) : null}
 

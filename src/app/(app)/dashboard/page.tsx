@@ -109,7 +109,7 @@ export default async function DashboardPage() {
 
   const tipos = await cargarTiposClientePrecio(service);
   const [datos, aprobaciones, resumenProductos] = await Promise.all([
-    cargarDashboard(service, rol),
+    cargarDashboard(service, rol, ctx.userId),
     cargarAprobaciones(
       service,
       rol,

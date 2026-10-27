@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACT_ETAPA } from "@/config/prospectos";
+import { parseActividad } from "@/lib/actividad";
 import { sumarDias } from "@/lib/fechas";
 import { daysBetween, localDayBogota, todayBogota } from "@/lib/format";
 
@@ -52,9 +53,8 @@ function inicioDiaBogota(dia: string): string {
  * Auditoría de la labor comercial (as-is vSupervision), acotada a un período de 7/30/90
  * días. Todo se agrega en el servidor; el navegador solo recibe cifras y la cartera.
  *
- * «Contactos con clientes» y «Avances en el funnel» salen del historial de los prospectos
- * (`prospecto_actividad`), como el as-is: los cambios de etapa son los «avances» y el resto
- * de entradas son contactos.
+ * «Contactos con clientes» y «Avances en el funnel» salen del historial
+ * `prospectos.actividad` (jsonb de main): tipo «Etapa» cuenta como avance.
  */
 export async function cargarSupervision(
   service: SupabaseClient,
@@ -91,11 +91,9 @@ export async function cargarSupervision(
       .gte("ganado_en", desde)
       .lte("ganado_en", hoy),
     service
-      .from("prospecto_actividad")
-      .select("prospecto_id, tipo")
-      .gte("fecha", desde)
-      .lte("fecha", hoy)
-      .limit(20_000),
+      .from("prospectos")
+      .select("id, actividad")
+      .limit(2_000),
     service
       .from("compromisos")
       .select("fecha, hecho, hecho_en, responsable:profiles!compromisos_responsable_id_fkey!inner ( rol )")
@@ -163,12 +161,15 @@ export async function cargarSupervision(
   // Historial del período: «Etapa» = avance en el funnel; lo demás, contactos (as-is acts).
   let avances = 0;
   const contactosPorProspecto = new Map<string, number>();
-  for (const a of actividadRes.data ?? []) {
-    if (a.tipo === ACT_ETAPA) {
-      avances += 1;
-    } else {
-      const pid = a.prospecto_id as string;
-      contactosPorProspecto.set(pid, (contactosPorProspecto.get(pid) ?? 0) + 1);
+  for (const row of actividadRes.data ?? []) {
+    const pid = row.id as string;
+    for (const a of parseActividad(row.actividad)) {
+      if (!a.f || a.f < desde || a.f > hoy) continue;
+      if (a.t === ACT_ETAPA) {
+        avances += 1;
+      } else {
+        contactosPorProspecto.set(pid, (contactosPorProspecto.get(pid) ?? 0) + 1);
+      }
     }
   }
   const contactos = [...contactosPorProspecto.values()].reduce((a, n) => a + n, 0);

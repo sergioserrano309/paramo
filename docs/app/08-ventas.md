@@ -41,6 +41,7 @@
 |---|---|---|
 | Almacenamiento | Una fila por línea de venta | Documentos de 1.500 filas (limitación de Firestore) |
 | `ventas_meses` | Vista `ventas_por_mes` | Tabla propia (doble fuente de verdad) |
+| Vista y volumen | Hoy se recalcula en cada lectura. Si crecen los años de facturas y el resumen se pide en cada pantalla, pasar a vista materializada refrescada al cargar el Excel | Dejar el `GROUP BY` completo en cada visita cuando el volumen ya pese |
 | Cruce con productos | `producto_clave` (nombre normalizado) resuelto al consultar | FK `producto_id` fijada al cargar: queda desactualizada si el producto se crea o renombra después |
 | Carga | RPC `cargar_ventas` atómica | Borrar e insertar por lotes desde la API (mes a medias si falla) |
 | Agregados | En SQL (`ventas_resumen`); el cliente solo recibe totales | Volcar todas las filas al navegador (anti-patrón del as-is) |
@@ -77,6 +78,12 @@
 
 - `xlsx` 0.20.3, instalado desde `cdn.sheetjs.com` (la versión del registro npm tiene
   vulnerabilidades conocidas sin parche). Solo lee archivos que el propio usuario sube.
+
+## Vista `ventas_por_mes`
+
+No guarda un resultado. Cada consulta agrupa `ventas` por mes. Con los meses que carga el equipo, ese agrupado es el mismo trabajo que haría la consulta a mano y no añade una espera propia.
+
+Cuando el historial de ventas sea grande y Dashboard, Ventas o la ficha de producto pidan ese resumen seguido, hay que evitar recalcularlo en cada carga. La salida prevista es una vista materializada que se refresque al terminar `cargar_ventas` (y al borrar un mes), no una segunda tabla escrita a mano.
 
 ## Próximos posibles desarrollos (no están en el as-is)
 

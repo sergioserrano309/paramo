@@ -1,20 +1,23 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, type FormEvent } from "react";
-import { ProspectoFicha } from "@/components/ProspectoFicha";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { CompromisoFechaText } from "@/components/CompromisoFechaText";
+import { ProspectoDetalleDrawer } from "@/components/ProspectoDetalleDrawer";
+import { StagePill } from "@/components/StagePill";
+import { WhoChip } from "@/components/WhoChip";
+import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { STALE_DAYS } from "@/config/funnel";
-import { CALIF_TXT } from "@/config/prospectos";
+import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
-import { textoFecha } from "@/lib/fechas";
+import { canEditProspecto } from "@/lib/can";
+import { cn } from "@/lib/cn";
 import {
-  daysBetween,
   formatMoneyShort,
-  initials,
-  localDayBogota,
+  formatUltimoContacto,
   todayBogota,
 } from "@/lib/format";
-import { norm } from "@/lib/texto";
+import type { ProximoCompromiso } from "@/lib/types/compromiso";
 import type {
   ProspectoListItem,
   ProspectosCatalogos,
@@ -27,18 +30,11 @@ type ProspectosPanelProps = {
   defaultResponsableId: string;
   userId: string;
   userRol: Rol;
-  /** Cambia con cada pulsación de «N» o enlace `?nuevo=…`; si no está vacío, abre el alta. */
-  nuevoToken: string;
-  abrirInicial: string;
-};
-
-type Filtros = {
-  q: string;
-  /** "activos" = en gestión; "" = todas; "inactivos"; o el código de una etapa. */
-  etapa: string;
-  canal: string;
-  resp: string;
-  calif: string;
+  proximosPorProspecto: Record<string, ProximoCompromiso>;
+  /** Token de `?nuevo=` (atajo N). Si viene, abre el alta. */
+  nuevoToken?: string;
+  /** `?abrir=` abre la ficha de ese prospecto. */
+  abrirInicial?: string;
 };
 
 type FormState = {
@@ -57,6 +53,16 @@ type FormState = {
   calificacion: string;
   notas: string;
   responsable_id: string;
+};
+
+type Filters = {
+  q: string;
+  /** '' = todas; 'activos' | 'inactivos' | codigo etapa */
+  etapa: string;
+  canal: string;
+  resp: string;
+  /** '' = cualquiera; '0'|'1'|'2'|'3' igualdad exacta */
+  calif: string;
 };
 
 function emptyForm(defaultResponsableId: string, etapaDefault: string): FormState {
@@ -79,14 +85,18 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
   };
 }
 
-function stars(n: number) {
-  const v = Math.max(0, Math.min(3, n || 0));
-  return "★".repeat(v) + "☆".repeat(3 - v);
+function empresaSubline(p: ProspectoListItem): string {
+  return [p.contacto, p.ciudad].filter(Boolean).join(" · ");
 }
 
 const fieldClass =
   "min-h-11 w-full rounded-lg border border-paramo-line bg-paramo-surface px-3 text-paramo-fg focus:border-paramo-teal focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft";
+/** Como as-is `.filters .inp { width: auto }` — no forzar w-full o apilan en columna. */
+const filterFieldClass =
+  "min-h-11 w-auto max-w-full rounded-lg border border-paramo-line bg-paramo-surface px-3 text-sm text-paramo-fg focus:border-paramo-teal focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft";
 const labelClass = "text-[11.5px] font-bold text-paramo-muted";
+const thClass =
+  "px-3 py-2 text-left text-[11px] font-extrabold uppercase tracking-[0.07em] text-paramo-muted whitespace-nowrap";
 
 export function ProspectosPanel({
   initialProspectos,
@@ -95,19 +105,37 @@ export function ProspectosPanel({
   defaultResponsableId,
   userId,
   userRol,
-  nuevoToken,
-  abrirInicial,
+  proximosPorProspecto,
+  nuevoToken = "",
+  abrirInicial = "",
 }: ProspectosPanelProps) {
   const router = useRouter();
-  const titleId = useId();
-  const etapasAlta = catalogos.etapas.filter((e) => e.en_pipeline);
+  const createTitleId = useId();
+  const detailTitleId = useId();
+  const etapasOrdenadas = useMemo(
+    () => [...catalogos.etapas].sort((a, b) => a.orden - b.orden),
+    [catalogos.etapas],
+  );
+  const etapasAlta = etapasOrdenadas.filter((e) => e.en_pipeline);
   const etapaDefault =
     etapasAlta.find((e) => e.codigo === "prospecto")?.codigo ??
     etapasAlta[0]?.codigo ??
     "prospecto";
+  const etapaIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    etapasOrdenadas.forEach((e, i) => m.set(e.codigo, i));
+    return m;
+  }, [etapasOrdenadas]);
+  const pipelineCodigos = useMemo(
+    () => new Set(etapasAlta.map((e) => e.codigo)),
+    [etapasAlta],
+  );
 
   const [prospectos, setProspectos] = useState(initialProspectos);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(abrirInicial || null);
+  const [lostForId, setLostForId] = useState<string | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
   const [form, setForm] = useState(() =>
     emptyForm(defaultResponsableId, etapaDefault),
   );
@@ -118,41 +146,47 @@ export function ProspectosPanel({
     canal_codigo: "",
     responsable_id: defaultResponsableId,
   });
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [filtros, setFiltros] = useState<Filtros>({
+  const [filters, setFilters] = useState<Filters>({
     q: "",
-    etapa: "activos",
+    etapa: "",
     canal: "",
     resp: "",
     calif: "",
   });
-  const [openId, setOpenId] = useState<string | null>(abrirInicial || null);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setProspectos(initialProspectos);
   }, [initialProspectos]);
 
-  // Atajo «N» (o enlace con `?nuevo=…`): abre el alta completa.
   useEffect(() => {
-    if (nuevoToken && canCreate) {
-      setOpenId(null);
-      setDrawerOpen(true);
-    }
+    if (nuevoToken && canCreate) setCreateOpen(true);
   }, [nuevoToken, canCreate]);
 
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!createOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setDrawerOpen(false);
+      if (e.key === "Escape") setCreateOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
+  }, [createOpen]);
+
+  function canEdit(p: ProspectoListItem) {
+    return canEditProspecto(userRol, userId, p.responsable_id);
+  }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function rolDe(responsableId: string): Rol {
+    return (
+      catalogos.responsables.find((r) => r.id === responsableId)?.rol ??
+      userRol
+    );
   }
 
   async function createProspecto(payload: Record<string, unknown>) {
@@ -171,10 +205,68 @@ export function ProspectosPanel({
     return body.prospecto;
   }
 
+  async function patchEtapa(
+    id: string,
+    etapa_codigo: string,
+    motivo_perdida?: string,
+  ) {
+    const res = await fetch(`/api/prospectos/${id}/etapa`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        etapa_codigo,
+        motivo_perdida: motivo_perdida ?? "",
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+      prospecto?: ProspectoListItem;
+    } | null;
+    if (!res.ok || !body?.prospecto) {
+      throw new Error(body?.error ?? "No se pudo actualizar la etapa.");
+    }
+    return body.prospecto;
+  }
+
+  async function moveToStage(
+    id: string,
+    etapa_codigo: string,
+    motivo?: string,
+  ) {
+    const p = prospectos.find((x) => x.id === id);
+    if (!p || p.etapa_codigo === etapa_codigo) return;
+    if (!canEdit(p)) {
+      setError("No autorizado para mover este prospecto.");
+      return;
+    }
+    if (etapa_codigo === "perdido" && motivo === undefined) {
+      setLostForId(id);
+      return;
+    }
+    setError(null);
+    setOk(null);
+    setMovingId(id);
+    try {
+      const updated = await patchEtapa(id, etapa_codigo, motivo);
+      setProspectos((prev) =>
+        prev.map((x) => (x.id === id ? updated : x)),
+      );
+      if (etapa_codigo === "ganado") {
+        setOk(`¡${updated.empresa} ganado!`);
+      }
+      router.refresh();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo actualizar la etapa.",
+      );
+    } finally {
+      setMovingId(null);
+    }
+  }
+
   async function onQuickSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canCreate) return;
-    // As-is quickP: solo exige empresa.trim(); el resto puede ir vacío.
     const empresa = quick.empresa.trim();
     if (!empresa) return;
     setError(null);
@@ -185,15 +277,15 @@ export function ProspectosPanel({
         empresa,
         contacto: quick.contacto.trim(),
         telefono: quick.telefono.trim(),
-        canal_codigo: quick.canal_codigo.trim() || null,
+        canal_codigo: quick.canal_codigo || null,
         responsable_id: quick.responsable_id || defaultResponsableId,
         etapa_codigo: "prospecto",
         nit: "",
         cargo: "",
         email: "",
         ciudad: "",
-        fuente_codigo: null,
         tipo_cliente_codigo: null,
+        fuente_codigo: null,
         valor_mensual_estimado: 0,
         calificacion: 0,
         notas: "",
@@ -208,9 +300,9 @@ export function ProspectosPanel({
       });
       setOk(`${created.empresa} agregado`);
       router.refresh();
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         document.getElementById("qp-empresa")?.focus();
-      });
+      }, 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo crear el prospecto.");
     } finally {
@@ -218,7 +310,7 @@ export function ProspectosPanel({
     }
   }
 
-  async function onDrawerSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canCreate) return;
     setError(null);
@@ -237,15 +329,13 @@ export function ProspectosPanel({
         tipo_cliente_codigo: form.tipo_cliente_codigo || null,
         fuente_codigo: form.fuente_codigo || null,
         etapa_codigo: form.etapa_codigo || etapaDefault,
-        valor_mensual_estimado: form.valor_mensual_estimado
-          ? Number(form.valor_mensual_estimado)
-          : 0,
+        valor_mensual_estimado: Number(form.valor_mensual_estimado) || 0,
         calificacion: Number(form.calificacion) || 0,
         notas: form.notas,
         responsable_id: form.responsable_id || defaultResponsableId,
       });
       setProspectos((prev) => [created, ...prev]);
-      setDrawerOpen(false);
+      setCreateOpen(false);
       setForm(emptyForm(defaultResponsableId, etapaDefault));
       setOk(`${created.empresa} creado`);
       router.refresh();
@@ -256,47 +346,63 @@ export function ProspectosPanel({
     }
   }
 
-  const etapasOrden = new Map(catalogos.etapas.map((e) => [e.codigo, e.orden]));
-  const enPipeline = new Set(catalogos.etapas.filter((e) => e.en_pipeline).map((e) => e.codigo));
+  const nInactivos = prospectos.filter((p) => !p.activo).length;
   const hoy = todayBogota();
-  const inactivos = prospectos.filter((p) => !p.activo).length;
 
-  // As-is vProspectos: filtros, y orden por calificación, etapa y valor.
-  const filtered = prospectos
-    .filter((p) => {
-      const f = filtros;
-      if (f.etapa === "inactivos") {
-        if (p.activo) return false;
-      } else {
-        if (!p.activo) return false;
-        if (f.etapa === "activos") {
-          if (!enPipeline.has(p.etapa_codigo)) return false;
-        } else if (f.etapa && p.etapa_codigo !== f.etapa) return false;
+  const filtered = useMemo(() => {
+    let list = prospectos.slice();
+    const f = filters;
+
+    if (f.etapa === "inactivos") {
+      list = list.filter((p) => !p.activo);
+    } else {
+      list = list.filter((p) => p.activo);
+      if (f.etapa === "activos") {
+        list = list.filter((p) => pipelineCodigos.has(p.etapa_codigo));
+      } else if (f.etapa) {
+        list = list.filter((p) => p.etapa_codigo === f.etapa);
       }
-      if (f.canal && p.canal_codigo !== f.canal) return false;
-      if (f.resp && p.responsable_id !== f.resp) return false;
-      if (f.calif && p.calificacion < Number(f.calif)) return false;
-      if (f.q.trim()) {
-        const hay = norm(
-          [p.empresa, p.contacto, p.ciudad, p.telefono, p.email, p.nit].join(" "),
-        );
-        if (!hay.includes(norm(f.q))) return false;
-      }
-      return true;
-    })
-    .sort(
-      (a, b) =>
-        b.calificacion - a.calificacion ||
-        (etapasOrden.get(b.etapa_codigo) ?? 0) - (etapasOrden.get(a.etapa_codigo) ?? 0) ||
-        b.valor_mensual_estimado - a.valor_mensual_estimado,
-    );
+    }
 
-  function ultimoContacto(p: ProspectoListItem): string {
-    return p.ultimo_contacto ?? localDayBogota(p.creado_en);
-  }
+    if (f.canal) list = list.filter((p) => p.canal_codigo === f.canal);
+    if (f.resp) list = list.filter((p) => p.responsable_id === f.resp);
+    if (f.calif !== "") {
+      const n = Number(f.calif);
+      list = list.filter((p) => p.calificacion === n);
+    }
+    if (f.q.trim()) {
+      const q = f.q.trim().toLowerCase();
+      list = list.filter((p) =>
+        [p.empresa, p.contacto, p.ciudad, p.telefono, p.email, p.nit]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+      );
+    }
 
-  function actualizarEnLista(p: ProspectoListItem) {
-    setProspectos((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+    list.sort((a, b) => {
+      const c = (b.calificacion || 0) - (a.calificacion || 0);
+      if (c) return c;
+      const ei =
+        (etapaIndex.get(b.etapa_codigo) ?? 0) -
+        (etapaIndex.get(a.etapa_codigo) ?? 0);
+      if (ei) return ei;
+      return (b.valor_mensual_estimado || 0) - (a.valor_mensual_estimado || 0);
+    });
+
+    return list;
+  }, [prospectos, filters, pipelineCodigos, etapaIndex]);
+
+  const openProspecto = openId
+    ? (prospectos.find((p) => p.id === openId) ?? null)
+    : null;
+  const lostProspecto = lostForId
+    ? (prospectos.find((p) => p.id === lostForId) ?? null)
+    : null;
+
+  function openDetalle(id: string) {
+    setError(null);
+    setOpenId(id);
   }
 
   return (
@@ -316,11 +422,11 @@ export function ProspectosPanel({
             onClick={() => {
               setError(null);
               setForm(emptyForm(defaultResponsableId, etapaDefault));
-              setDrawerOpen(true);
+              setCreateOpen(true);
             }}
             className="inline-flex min-h-11 items-center justify-center rounded-full bg-paramo-brand px-5 text-sm font-bold text-paramo-brand-ink hover:brightness-110"
           >
-            Prospecto
+            + Prospecto
           </button>
         ) : null}
       </div>
@@ -330,7 +436,7 @@ export function ProspectosPanel({
           {ok}
         </p>
       ) : null}
-      {error && !drawerOpen ? (
+      {error && !createOpen && !openId ? (
         <p className="text-sm text-paramo-bad" role="alert">
           {error}
         </p>
@@ -433,43 +539,42 @@ export function ProspectosPanel({
               disabled={loading}
               className="inline-flex min-h-11 items-center justify-center rounded-full bg-paramo-brand px-5 text-sm font-bold text-paramo-brand-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "…" : "Agregar"}
+              {loading ? "…" : "+ Agregar"}
             </button>
           </form>
         </section>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      {/* As-is .filters: fila horizontal, inputs width:auto, búsqueda flex:1 1 200px */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           type="search"
-          value={filtros.q}
-          onChange={(e) => setFiltros((f) => ({ ...f, q: e.target.value }))}
+          value={filters.q}
+          onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
           placeholder="Buscar empresa, contacto, NIT…"
-          className={`${fieldClass} min-w-[200px] max-w-md flex-1`}
+          className={`${filterFieldClass} min-w-[200px] flex-[1_1_200px]`}
           aria-label="Buscar prospectos"
         />
         <select
-          aria-label="Etapa"
-          value={filtros.etapa}
-          onChange={(e) => setFiltros((f) => ({ ...f, etapa: e.target.value }))}
-          className={`${fieldClass} w-auto`}
+          aria-label="Filtrar por etapa"
+          value={filters.etapa}
+          onChange={(e) => setFilters((f) => ({ ...f, etapa: e.target.value }))}
+          className={filterFieldClass}
         >
           <option value="activos">En gestión</option>
           <option value="">Todas las etapas</option>
-          {[...catalogos.etapas]
-            .sort((a, b) => a.orden - b.orden)
-            .map((e) => (
-              <option key={e.codigo} value={e.codigo}>
-                {e.nombre}
-              </option>
-            ))}
-          <option value="inactivos">Inactivos ({inactivos})</option>
+          {etapasOrdenadas.map((e) => (
+            <option key={e.codigo} value={e.codigo}>
+              {e.nombre}
+            </option>
+          ))}
+          <option value="inactivos">Inactivos ({nInactivos})</option>
         </select>
         <select
-          aria-label="Canal"
-          value={filtros.canal}
-          onChange={(e) => setFiltros((f) => ({ ...f, canal: e.target.value }))}
-          className={`${fieldClass} w-auto`}
+          aria-label="Filtrar por canal"
+          value={filters.canal}
+          onChange={(e) => setFilters((f) => ({ ...f, canal: e.target.value }))}
+          className={filterFieldClass}
         >
           <option value="">Todos los canales</option>
           {catalogos.canales.map((c) => (
@@ -479,10 +584,10 @@ export function ProspectosPanel({
           ))}
         </select>
         <select
-          aria-label="Responsable"
-          value={filtros.resp}
-          onChange={(e) => setFiltros((f) => ({ ...f, resp: e.target.value }))}
-          className={`${fieldClass} w-auto`}
+          aria-label="Filtrar por responsable"
+          value={filters.resp}
+          onChange={(e) => setFilters((f) => ({ ...f, resp: e.target.value }))}
+          className={filterFieldClass}
         >
           <option value="">Todos los responsables</option>
           {catalogos.responsables.map((r) => (
@@ -492,15 +597,16 @@ export function ProspectosPanel({
           ))}
         </select>
         <select
-          aria-label="Calificación"
-          value={filtros.calif}
-          onChange={(e) => setFiltros((f) => ({ ...f, calif: e.target.value }))}
-          className={`${fieldClass} w-auto`}
+          aria-label="Filtrar por calificación"
+          value={filters.calif}
+          onChange={(e) => setFilters((f) => ({ ...f, calif: e.target.value }))}
+          className={filterFieldClass}
         >
           <option value="">Cualquier calificación</option>
+          <option value="0">Sin calificar</option>
+          <option value="1">★ Potencial bajo</option>
+          <option value="2">★★ Potencial medio</option>
           <option value="3">★★★ Potencial alto</option>
-          <option value="2">★★ o más</option>
-          <option value="1">★ o más</option>
         </select>
         <span className="text-sm text-paramo-muted">
           {filtered.length} {filtered.length === 1 ? "registro" : "registros"}
@@ -524,106 +630,112 @@ export function ProspectosPanel({
         </div>
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-[10px] border border-paramo-line bg-paramo-surface md:block">
-            <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+          {/* Desktop: tabla as-is */}
+          <div className="hidden overflow-x-auto rounded-[10px] border border-paramo-line bg-paramo-surface sm:block">
+            <table className="w-full min-w-[960px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-paramo-line text-[11.5px] font-bold uppercase tracking-wide text-paramo-muted">
-                  <th className="px-3 py-2 font-bold">Empresa</th>
-                  <th className="px-3 py-2 font-bold">Calif.</th>
-                  <th className="px-3 py-2 font-bold">Etapa</th>
-                  <th className="px-3 py-2 font-bold">Responsable</th>
-                  <th className="px-3 py-2 text-right font-bold">Venta mensual est.</th>
-                  <th className="px-3 py-2 font-bold">Próximo compromiso</th>
-                  <th className="px-3 py-2 text-right font-bold">Último contacto</th>
+                <tr className="border-b border-paramo-line">
+                  <th className={thClass}>Empresa</th>
+                  <th className={thClass}>Calif.</th>
+                  <th className={thClass}>Etapa</th>
+                  <th className={thClass}>Responsable</th>
+                  <th className={`${thClass} text-right`}>Venta mensual est.</th>
+                  <th className={thClass}>Próximo compromiso</th>
+                  <th className={`${thClass} text-right`}>Último contacto</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p) => {
-                  const dd = daysBetween(ultimoContacto(p), hoy);
-                  const stale = dd >= STALE_DAYS && enPipeline.has(p.etapa_codigo) && p.activo;
+                  const nc = proximosPorProspecto[p.id];
+                  const touch = formatUltimoContacto(
+                    p.ultimo_contacto,
+                    p.creado_en,
+                    hoy,
+                  );
+                  const stale =
+                    touch.days !== null &&
+                    touch.days >= STALE_DAYS &&
+                    pipelineCodigos.has(p.etapa_codigo) &&
+                    p.activo;
+                  const sub = empresaSubline(p);
+
                   return (
                     <tr
                       key={p.id}
-                      className={`cursor-pointer border-b border-paramo-line last:border-b-0 hover:bg-paramo-surface-2 ${
-                        p.activo ? "" : "opacity-60"
-                      }`}
-                      onClick={() => setOpenId(p.id)}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDetalle(p.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openDetalle(p.id);
+                        }
+                      }}
+                      className={cn(
+                        "cursor-pointer border-b border-paramo-line last:border-b-0 hover:bg-paramo-surface-2/70",
+                        !p.activo && "opacity-60",
+                      )}
                     >
                       <td className="px-3 py-3">
-                        <button
-                          type="button"
-                          className="text-left font-medium text-paramo-fg focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenId(p.id);
-                          }}
-                        >
+                        <div className="font-bold text-paramo-fg">
                           {p.empresa}
-                        </button>
-                        {p.observaciones_abiertas ? (
-                          <span
-                            title="Observaciones abiertas"
-                            className="ml-2 rounded-full bg-paramo-brand-soft px-2 py-0.5 text-[10px] font-bold text-paramo-brand"
-                          >
-                            {p.observaciones_abiertas}
-                          </span>
-                        ) : null}
-                        {!p.activo ? (
-                          <span className="ml-2 text-xs text-paramo-muted">Inactivo</span>
-                        ) : null}
-                        <div className="text-xs text-paramo-muted">
-                          {[p.contacto, p.ciudad].filter(Boolean).join(" · ") || "—"}
+                          {!p.activo ? (
+                            <span className="ml-2 rounded-full bg-paramo-surface-2 px-2 py-0.5 text-[11px] font-bold text-paramo-muted">
+                              Inactivo
+                            </span>
+                          ) : null}
                         </div>
+                        {sub ? (
+                          <div className="text-xs text-paramo-muted">{sub}</div>
+                        ) : null}
                       </td>
                       <td
                         className="px-3 py-3 text-paramo-olive"
                         title={CALIF_TXT[p.calificacion] ?? CALIF_TXT[0]}
                       >
-                        {stars(p.calificacion)}
-                      </td>
-                      <td className="px-3 py-3 text-paramo-fg">{p.etapa_nombre}</td>
-                      <td className="px-3 py-3 text-paramo-fg">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            aria-hidden="true"
-                            className="inline-flex size-5 items-center justify-center rounded-full bg-paramo-teal text-[9px] font-bold text-paramo-brand-ink"
-                          >
-                            {initials(p.responsable_nombre)}
-                          </span>
-                          {p.responsable_nombre}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-right text-paramo-fg">
-                        {p.valor_mensual_estimado ? formatMoneyShort(p.valor_mensual_estimado) : "—"}
+                        {stars3(p.calificacion)}
                       </td>
                       <td className="px-3 py-3">
-                        {p.proximo_compromiso ? (
-                          <>
-                            <span
-                              className={
-                                p.proximo_compromiso.fecha < hoy
-                                  ? "font-bold text-paramo-bad"
-                                  : p.proximo_compromiso.fecha === hoy
-                                    ? "font-bold text-paramo-warn"
-                                    : "text-paramo-fg"
-                              }
-                            >
-                              {textoFecha(p.proximo_compromiso.fecha)}
-                            </span>{" "}
+                        <StagePill
+                          codigo={p.etapa_codigo}
+                          nombre={p.etapa_nombre}
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <WhoChip
+                          nombre={p.responsable_nombre}
+                          rol={rolDe(p.responsable_id)}
+                          showRol
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums text-paramo-fg">
+                        {p.valor_mensual_estimado
+                          ? formatMoneyShort(p.valor_mensual_estimado)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {nc ? (
+                          <span className="inline-flex flex-wrap items-baseline gap-1.5">
+                            <CompromisoFechaText fecha={nc.fecha} />
                             <span className="text-xs text-paramo-muted">
-                              {p.proximo_compromiso.titulo}
+                              {nc.titulo}
                             </span>
-                          </>
+                          </span>
                         ) : (
-                          <span className="text-xs text-paramo-muted">Sin compromiso</span>
+                          <span className="text-xs text-paramo-muted">
+                            Sin compromiso
+                          </span>
                         )}
                       </td>
                       <td
-                        className={`px-3 py-3 text-right ${
-                          stale ? "font-bold text-paramo-bad" : "text-xs text-paramo-muted"
-                        }`}
+                        className={cn(
+                          "px-3 py-3 text-right tabular-nums",
+                          stale
+                            ? "font-bold text-paramo-warn"
+                            : "text-xs text-paramo-muted",
+                        )}
                       >
-                        {dd === 0 ? "hoy" : `hace ${dd} d`}
+                        {touch.label}
                       </td>
                     </tr>
                   );
@@ -632,70 +744,147 @@ export function ProspectosPanel({
             </table>
           </div>
 
-          <div className="space-y-2 md:hidden">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setOpenId(p.id)}
-                className={`block w-full space-y-1 rounded-[10px] border border-paramo-line bg-paramo-surface p-3 text-left ${
-                  p.activo ? "" : "opacity-60"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <b className="text-paramo-fg">{p.empresa}</b>
-                  <span className="text-xs text-paramo-muted">{p.etapa_nombre}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2 text-xs text-paramo-muted">
-                  <span>
-                    <span className="text-paramo-olive">{stars(p.calificacion)}</span>{" "}
-                    {p.responsable_nombre}
-                  </span>
-                  <span>
-                    {p.valor_mensual_estimado ? formatMoneyShort(p.valor_mensual_estimado) : ""}
-                  </span>
-                </div>
-                {p.proximo_compromiso ? (
-                  <div className="text-xs text-paramo-muted">
-                    {textoFecha(p.proximo_compromiso.fecha)} · {p.proximo_compromiso.titulo}
+          {/* Móvil: cards (as-is mcards) */}
+          <div className="grid gap-2 sm:hidden">
+            {filtered.map((p) => {
+              const nc = proximosPorProspecto[p.id];
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => openDetalle(p.id)}
+                  className={cn(
+                    "rounded-[10px] border border-paramo-line bg-paramo-surface p-3 text-left",
+                    !p.activo && "opacity-60",
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <b className="text-[14px] text-paramo-fg">{p.empresa}</b>
+                    <StagePill
+                      codigo={p.etapa_codigo}
+                      nombre={p.etapa_nombre}
+                    />
                   </div>
-                ) : null}
-              </button>
-            ))}
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-paramo-muted">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-paramo-olive">
+                        {stars3(p.calificacion)}
+                      </span>
+                      <span>{p.responsable_nombre}</span>
+                    </span>
+                    <span>
+                      {p.valor_mensual_estimado
+                        ? formatMoneyShort(p.valor_mensual_estimado)
+                        : ""}
+                    </span>
+                  </div>
+                  {nc ? (
+                    <div className="mt-1 text-xs text-paramo-muted">
+                      <CompromisoFechaText fecha={nc.fecha} />
+                      {" · "}
+                      {nc.titulo}
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
 
-      {openId ? (
-        <ProspectoFicha
-          key={openId}
-          prospectoId={openId}
-          catalogos={catalogos}
-          userId={userId}
-          userRol={userRol}
-          onCerrar={() => setOpenId(null)}
-          onActualizado={actualizarEnLista}
-          onEliminado={(id) => setProspectos((prev) => prev.filter((x) => x.id !== id))}
-        />
-      ) : null}
-
-      {drawerOpen ? (
+      {lostProspecto ? (
         <div
-          className="fixed inset-0 z-50 flex justify-end bg-paramo-fg/40"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-paramo-fg/40 p-4"
           role="presentation"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setDrawerOpen(false);
+            if (e.target === e.currentTarget) setLostForId(null);
           }}
         >
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby={titleId}
+            aria-label="Motivo de pérdida"
+            className="w-full max-w-md rounded-[12px] border border-paramo-line bg-paramo-surface p-4 shadow-lg"
+          >
+            <h2 className="font-paramo-display text-lg font-bold text-paramo-fg">
+              Motivo de pérdida
+            </h2>
+            <p className="mt-1 text-sm text-paramo-muted">
+              {lostProspecto.empresa}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {MOTIVOS_PERDIDA.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  disabled={movingId === lostProspecto.id}
+                  onClick={() => {
+                    const id = lostProspecto.id;
+                    setLostForId(null);
+                    void moveToStage(id, "perdido", m);
+                  }}
+                  className="rounded-full border border-paramo-line bg-paramo-surface px-3 py-2 text-xs font-semibold text-paramo-muted hover:border-paramo-brand hover:bg-paramo-brand-soft hover:text-paramo-brand disabled:opacity-50"
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setLostForId(null)}
+                className="inline-flex min-h-11 items-center justify-center rounded-full border border-paramo-line px-4 text-sm font-bold text-paramo-fg hover:bg-paramo-surface-2"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {openProspecto ? (
+        <ProspectoDetalleDrawer
+          titleId={detailTitleId}
+          prospecto={openProspecto}
+          etapas={etapasOrdenadas}
+          etapaIndex={etapaIndex}
+          canMove={canEdit(openProspecto)}
+          moving={movingId === openProspecto.id}
+          onClose={() => setOpenId(null)}
+          onSetStage={(k) => void moveToStage(openProspecto.id, k)}
+          catalogos={catalogos}
+          prospectosAgenda={prospectos}
+          userId={userId}
+          userRol={userRol}
+          onUpdated={(next) =>
+            setProspectos((prev) =>
+              prev.map((item) => (item.id === next.id ? next : item)),
+            )
+          }
+          onDeleted={(id) => {
+            setProspectos((prev) => prev.filter((item) => item.id !== id));
+            setOpenId(null);
+          }}
+        />
+      ) : null}
+
+      {createOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-paramo-fg/40"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCreateOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={createTitleId}
             className="flex h-full w-full max-w-lg flex-col border-l border-paramo-line bg-paramo-surface shadow-lg"
           >
             <div className="flex items-start gap-3 border-b border-paramo-line px-4 py-3">
               <h2
-                id={titleId}
+                id={createTitleId}
                 className="mr-auto font-paramo-display text-xl font-bold text-paramo-fg"
               >
                 Nuevo prospecto
@@ -703,7 +892,7 @@ export function ProspectosPanel({
               <button
                 type="button"
                 aria-label="Cerrar"
-                onClick={() => setDrawerOpen(false)}
+                onClick={() => setCreateOpen(false)}
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-paramo-muted hover:bg-paramo-surface-2 hover:text-paramo-fg"
               >
                 ✕
@@ -711,7 +900,7 @@ export function ProspectosPanel({
             </div>
             <form
               className="flex flex-1 flex-col overflow-y-auto p-4"
-              onSubmit={onDrawerSubmit}
+              onSubmit={onCreateSubmit}
               noValidate
             >
               <fieldset disabled={loading} className="grid gap-3 sm:grid-cols-2">
@@ -946,7 +1135,7 @@ export function ProspectosPanel({
                 </div>
               </fieldset>
 
-              {error ? (
+              {error && createOpen ? (
                 <p className="mt-3 text-sm text-paramo-bad" role="alert">
                   {error}
                 </p>
@@ -955,7 +1144,7 @@ export function ProspectosPanel({
               <div className="mt-auto flex justify-end gap-2 border-t border-paramo-line pt-4">
                 <button
                   type="button"
-                  onClick={() => setDrawerOpen(false)}
+                  onClick={() => setCreateOpen(false)}
                   className="inline-flex min-h-11 items-center justify-center rounded-full border border-paramo-line px-4 text-sm font-bold text-paramo-fg hover:bg-paramo-surface-2"
                 >
                   Cancelar

@@ -14,7 +14,7 @@ import {
   MOTIVOS_INACTIVO,
 } from "@/config/prospectos";
 import { can, canEditProspecto } from "@/lib/can";
-import { puedeMarcarCompromiso } from "@/lib/compromisos-permisos";
+import { canToggleCompromiso } from "@/lib/can";
 import { fechaCorta, textoFecha } from "@/lib/fechas";
 import { formatMoneyShort, todayBogota } from "@/lib/format";
 import { formatCOP } from "@/lib/precios";
@@ -611,7 +611,13 @@ export function ProspectoFicha({
                       <li key={c.id} className="flex items-start gap-3 py-2">
                         <button
                           type="button"
-                          disabled={!puedeMarcarCompromiso(userRol, userId, c)}
+                          disabled={
+                            !canToggleCompromiso(userRol, userId, {
+                              creadoPor: c.creado_por,
+                              responsableId: c.responsable_id,
+                              responsableRol: c.responsable_rol,
+                            })
+                          }
                           aria-pressed={c.hecho}
                           aria-label={c.hecho ? "Marcar pendiente" : "Marcar hecho"}
                           onClick={() => void marcarCompromiso(c.id, !c.hecho)}

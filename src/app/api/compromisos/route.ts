@@ -1,25 +1,50 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { isTipoCompromiso } from "@/config/compromisos";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
-import { registrarBitacora } from "@/lib/bitacora";
-import { can } from "@/lib/can";
 import {
-  cargarCompromiso,
-  cargarCompromisos,
-  compromisoSchema,
-  responsableValido,
+  canCreateCompromiso,
+  isAuthContext,
+  requireApiModuleAccess,
+} from "@/lib/permissions";
+import {
+  fetchCompromisoAgendaById,
+  fetchCompromisosAgenda,
+  prospectoExiste,
+  responsableActivo,
 } from "@/lib/compromisos";
 import { hasSupabaseServiceConfig } from "@/lib/env";
-import { fechaCorta } from "@/lib/fechas";
-import { clientKey, readJsonBody } from "@/lib/http";
-import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
+import { isFechaCompromiso } from "@/lib/format";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
 
-const MAX_BODY_BYTES = 4_096;
-const LIST_DENIED = "No se pudo cargar los compromisos.";
-const CREATE_DENIED = "No se pudo guardar el compromiso.";
+const MAX_BODY_BYTES = 16_384;
+const DENIED = "No se pudo guardar el compromiso.";
 
-export async function GET() {
+const createSchema = z.object({
+  titulo: z.string().trim().min(1).max(240),
+  tipo: z.string().trim().min(1).max(40),
+  fecha: z.string().trim(),
+  prospecto_id: z.union([z.string().uuid(), z.null()]).optional(),
+  notas: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((v) => (typeof v === "string" ? v.trim() : ""))
+    .pipe(z.string().max(4000)),
+  responsable_id: z.string().uuid().optional(),
+});
+
+function clientKey(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+const LIST_DENIED = "No se pudo cargar los compromisos.";
+
+/** Lista de un prospecto para la ficha. El comercial solo recibe los suyos. */
+export async function GET(request: Request) {
   const auth = await requireApiModuleAccess("compromisos");
   if (!isAuthContext(auth)) return auth;
 
@@ -27,20 +52,28 @@ export async function GET() {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 503 });
   }
 
-  const compromisos = await cargarCompromisos(createServiceClient(), auth.profile.rol);
-  if (!compromisos) {
+  const prospectoId = new URL(request.url).searchParams.get("prospecto_id");
+  if (!prospectoId || !z.string().uuid().safeParse(prospectoId).success) {
+    return NextResponse.json({ error: LIST_DENIED }, { status: 422 });
+  }
+
+  const service = createServiceClient();
+  const items = await fetchCompromisosAgenda(
+    service,
+    auth.profile.rol === "supervisor" ? null : auth.userId,
+    prospectoId,
+  );
+  if (!items) {
     return NextResponse.json({ error: LIST_DENIED }, { status: 500 });
   }
-  return NextResponse.json({ compromisos });
+  return NextResponse.json({ compromisos: items });
 }
 
-/** Crea un compromiso. As-is: `editar` o `asignar`. Solo el supervisor elige responsable. */
 export async function POST(request: Request) {
   const auth = await requireApiModuleAccess("compromisos");
   if (!isAuthContext(auth)) return auth;
 
-  const rol = auth.profile.rol;
-  if (!can(rol, "editar") && !can(rol, "asignar")) {
+  if (!canCreateCompromiso(auth.profile.rol)) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
@@ -49,74 +82,81 @@ export async function POST(request: Request) {
   }
 
   if (
-    !rateLimit(`compromisos-create:${auth.userId}:${clientKey(request)}`, 60, 60_000)
+    !rateLimit(`compromisos-create:${auth.userId}:${clientKey(request)}`, 40, 60_000)
   ) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 429 });
+    return NextResponse.json({ error: DENIED }, { status: 429 });
   }
 
-  const body = await readJsonBody(request, MAX_BODY_BYTES);
-  if (!body.ok) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: body.status });
+  const raw = await request.text();
+  if (raw.length > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: DENIED }, { status: 413 });
   }
-  const parsed = compromisoSchema.safeParse(body.json);
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  const parsed = createSchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
-  const datos = parsed.data;
-  const esSupervisor = rol === "supervisor";
+
+  const body = parsed.data;
+  if (!isTipoCompromiso(body.tipo) || !isFechaCompromiso(body.fecha)) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  // El comercial siempre agenda para sí mismo, aunque el body traiga otro id.
+  const responsableId =
+    auth.profile.rol === "supervisor"
+      ? (body.responsable_id ?? auth.userId)
+      : auth.userId;
 
   const service = createServiceClient();
-  const responsableId = esSupervisor ? (datos.responsable_id ?? auth.userId) : auth.userId;
-  const responsable = await responsableValido(service, responsableId);
-  if (!responsable) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
+
+  if (!(await responsableActivo(service, responsableId))) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
 
-  let empresa = "";
-  if (datos.prospecto_id) {
-    const { data: p } = await service
-      .from("prospectos")
-      .select("empresa")
-      .eq("id", datos.prospecto_id)
-      .maybeSingle();
-    if (!p) {
-      return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
-    }
-    empresa = p.empresa as string;
+  const prospectoId = body.prospecto_id ?? null;
+  if (prospectoId && !(await prospectoExiste(service, prospectoId))) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
 
-  const asignado = esSupervisor && responsableId !== auth.userId;
-  const { data: creado, error } = await service
+  const asignado =
+    auth.profile.rol === "supervisor" && responsableId !== auth.userId;
+
+  const { data: created, error } = await service
     .from("compromisos")
     .insert({
-      titulo: datos.titulo,
-      tipo: datos.tipo,
-      fecha: datos.fecha,
-      prospecto_id: datos.prospecto_id ?? null,
-      notas: datos.notas,
-      responsable_id: responsableId,
+      titulo: body.titulo,
+      tipo: body.tipo,
+      fecha: body.fecha,
+      prospecto_id: prospectoId,
+      notas: body.notas,
+      hecho: false,
+      hecho_en: null,
       asignado,
+      responsable_id: responsableId,
       creado_por: auth.userId,
-      actualizado_por: auth.userId,
     })
     .select("id")
     .single();
-  if (error || !creado) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 500 });
+
+  if (error || !created) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
   }
 
-  const id = creado.id as string;
-  await registrarBitacora(
-    service,
-    auth,
-    asignado ? "Tarea asignada" : "Compromiso creado",
-    `${empresa ? empresa + ": " : ""}${datos.titulo} · ${fechaCorta(datos.fecha)} · responsable ${responsable.nombre}`,
-    datos.prospecto_id ? { tabla: "prospectos", id: datos.prospecto_id } : undefined,
+  const loaded = await fetchCompromisoAgendaById(service, created.id as string);
+  if (loaded.error || !loaded.item) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
+  }
+
+  return NextResponse.json(
+    { ok: true, compromiso: loaded.item },
+    { status: 201 },
   );
-
-  const compromiso = await cargarCompromiso(service, id);
-  if (!compromiso) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 500 });
-  }
-  return NextResponse.json({ ok: true, compromiso }, { status: 201 });
 }

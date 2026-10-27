@@ -1,3 +1,9 @@
+-- Pendiente de validar al aplicar esta migración: la app de main escribe el
+-- historial en prospectos.actividad (jsonb). Esta migración igual crea
+-- prospecto_actividad. Hay que comprobar en Supabase si esa tabla recibe filas
+-- o queda vacía, y si prospecto_productos y producto_feedback responden en
+-- interés y retroalimentación. No se unificó el historial en este merge.
+--
 -- Decisión: tres tablas pequeñas que completan la ficha del prospecto y del producto.
 -- Cada una es una relación real (muchas filas por prospecto o producto) que se consulta
 -- agregada en SQL, por eso no caben como columna ni como jsonb (AGENTS.md §3.2):

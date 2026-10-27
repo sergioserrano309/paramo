@@ -1,5 +1,16 @@
 # Ficha del prospecto, listado y piezas relacionadas (Hito 11)
 
+> **Merge con main:** al hacer clic en un prospecto, `/prospectos` y `/funnel`
+> abren `ProspectoDetalleDrawer` (el panel de main). `?nuevo=` abre el alta y
+> `?abrir=` abre ese mismo panel. `ProspectoFicha` no es esa pantalla: queda
+> para las rutas de actividad, interés y activo.
+>
+> El historial que escribe la app es la columna `prospectos.actividad`
+> (lista jsonb `{f, t, x, u}`, no un sí/no). La migración
+> `20261024090000` igual crea `prospecto_actividad`, `prospecto_productos` y
+> `producto_feedback`. Al aplicarla hay que validar las tres: si la primera
+> recibe filas y si interés y retroalimentación guardan en las otras dos.
+
 Completa lo que el as-is hacía con el prospecto y que quedó «Próximamente» en los hitos de
 Prospectos (04) y Funnel (05).
 
@@ -53,8 +64,9 @@ contacto.
 
 | Tema | Decisión | Alternativa descartada |
 |---|---|---|
-| Historial, interés y opiniones | Tres tablas pequeñas, cada una justificada en el encabezado de la migración | `jsonb` dentro de `prospectos` / `productos` (como el as-is): imposible de sumar en SQL |
-| Una sola ficha | Un componente para Prospectos y Funnel | Dos drawers distintos |
+| Historial | La app escribe `prospectos.actividad` (jsonb). La tabla `prospecto_actividad` se crea igual y hay que validar si recibe filas | Unificar los dos almacenamientos en este merge |
+| Interés y opiniones | `prospecto_productos` y `producto_feedback`. Validar al aplicar la migración | Guardarlos solo en jsonb |
+| Pantalla al abrir | `ProspectoDetalleDrawer` en Prospectos y Funnel | Abrir `ProspectoFicha` desde el listado |
 | Crear compromiso y cotización desde la ficha | Enlace al módulo con el prospecto preseleccionado | Duplicar los formularios dentro de la ficha |
 | Compromiso cumplido | Entra al historial y a la bitácora | Solo bitácora |
 

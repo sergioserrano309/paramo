@@ -1,94 +1,114 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isTipoActividad, appendActividad } from "@/lib/actividad";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
-import { registrarBitacora } from "@/lib/bitacora";
-import { can, canEditProspecto } from "@/lib/can";
-import { CALIF_TXT } from "@/config/prospectos";
 import { isRol } from "@/config/roles";
+import { isMotivoInactivo } from "@/config/motivos-inactivo";
 import { hasSupabaseServiceConfig } from "@/lib/env";
-import { cargarFicha, codigoCatalogoActivo } from "@/lib/ficha-prospecto";
-import { formatMoneyShort } from "@/lib/format";
-import { clientKey, readJsonBody } from "@/lib/http";
-import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
+import { todayBogota } from "@/lib/format";
+import {
+  canAsignarResponsable,
+  canEditProspecto,
+  isAuthContext,
+  requireApiModuleAccess,
+} from "@/lib/permissions";
+import {
+  mapProspectoRow,
+  PROSPECTO_SELECT_LIST,
+  type ProspectoRow,
+} from "@/lib/prospectos";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-const MAX_BODY_BYTES = 8_192;
-const LOAD_DENIED = "No se pudo cargar el prospecto.";
-const SAVE_DENIED = "No se pudo guardar el prospecto.";
+const MAX_BODY_BYTES = 16_384;
+const DENIED = "No se pudo guardar el prospecto.";
 const DELETE_DENIED = "No se pudo eliminar el prospecto.";
 
-type RouteParams = { params: Promise<{ id: string }> };
-
-const texto = (max: number) =>
+const optionalText = (max: number) =>
   z
     .union([z.string(), z.null(), z.undefined()])
     .transform((v) => (typeof v === "string" ? v.trim() : ""))
     .pipe(z.string().max(max));
 
-const codigo = z
+const optionalCodigo = z
   .union([z.string(), z.null(), z.undefined()])
-  .transform((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 80) : null));
+  .transform((v) => {
+    if (typeof v !== "string") return null;
+    const t = v.trim();
+    return t.length > 0 ? t.slice(0, 80) : null;
+  });
 
-/** Un solo cambio por llamada: datos de la ficha, calificación o responsable. */
-const cambioSchema = z.union([
+const datosSchema = z.object({
+  accion: z.literal("datos"),
+  empresa: z.string().trim().min(1).max(200),
+  nit: optionalText(40),
+  contacto: optionalText(120),
+  cargo: optionalText(120),
+  telefono: optionalText(40),
+  email: optionalText(254).refine(
+    (v) => v === "" || z.string().email().safeParse(v).success,
+    { message: "email" },
+  ),
+  ciudad: optionalText(120),
+  canal_codigo: optionalCodigo,
+  tipo_cliente_codigo: optionalCodigo,
+  fuente_codigo: optionalCodigo,
+  valor_mensual_estimado: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? 0 : v),
+    z.coerce.number().min(0).max(1_000_000_000_000),
+  ),
+  notas: optionalText(4_000),
+});
+
+const patchSchema = z.discriminatedUnion("accion", [
+  datosSchema,
   z.object({
-    tipo: z.literal("datos"),
-    empresa: z.string().trim().min(1).max(200),
-    nit: texto(40),
-    contacto: texto(120),
-    cargo: texto(120),
-    telefono: texto(40),
-    email: texto(254).refine((v) => v === "" || z.string().email().safeParse(v).success),
-    ciudad: texto(120),
-    canal_codigo: codigo,
-    tipo_cliente_codigo: codigo,
-    fuente_codigo: codigo,
-    valor_mensual_estimado: z.preprocess(
-      (v) => (v === null || v === undefined || v === "" ? 0 : v),
-      z.coerce.number().min(0).max(1_000_000_000_000),
-    ),
-    notas: texto(4_000),
+    accion: z.literal("calificacion"),
+    calificacion: z.coerce.number().int().min(0).max(3),
   }),
-  z.object({ tipo: z.literal("calificacion"), calificacion: z.coerce.number().int().min(0).max(3) }),
-  z.object({ tipo: z.literal("responsable"), responsable_id: z.string().uuid() }),
+  z.object({
+    accion: z.literal("responsable"),
+    responsable_id: z.string().uuid(),
+  }),
+  z.object({
+    accion: z.literal("inactivar"),
+    motivo: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    accion: z.literal("reactivar"),
+  }),
+  z.object({
+    accion: z.literal("actividad"),
+    tipo: z.string().trim().min(1).max(40),
+    texto: z.string().trim().min(1).max(500),
+  }),
 ]);
 
-const ETIQUETAS: Record<string, string> = {
-  empresa: "Empresa",
-  nit: "NIT",
-  contacto: "Contacto",
-  cargo: "Cargo",
-  telefono: "Teléfono",
-  email: "Correo",
-  ciudad: "Ciudad",
-  canal_codigo: "Canal",
-  tipo_cliente_codigo: "Tipo de cliente",
-  fuente_codigo: "Fuente",
-  valor_mensual_estimado: "Venta mensual",
-  notas: "Notas",
-};
-
-/** Ficha completa del prospecto (as-is openProspect): datos, historial y relacionados. */
-export async function GET(_request: Request, { params }: RouteParams) {
-  const auth = await requireApiModuleAccess("prospectos");
-  if (!isAuthContext(auth)) return auth;
-
-  if (!hasSupabaseServiceConfig()) {
-    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 503 });
-  }
-
-  const { id } = await params;
-  if (!z.string().uuid().safeParse(id).success) {
-    return NextResponse.json({ error: LOAD_DENIED }, { status: 422 });
-  }
-
-  const ficha = await cargarFicha(createServiceClient(), id, auth.profile.rol);
-  if (!ficha) {
-    return NextResponse.json({ error: LOAD_DENIED }, { status: 404 });
-  }
-  return NextResponse.json({ ficha });
+function clientKey(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
 }
+
+async function codigoActivo(
+  service: SupabaseClient,
+  table: "canales" | "fuentes" | "tipos_cliente",
+  codigo: string | null,
+): Promise<boolean> {
+  if (!codigo) return true;
+  const { data, error } = await service
+    .from(table)
+    .select("codigo")
+    .eq("codigo", codigo)
+    .eq("activo", true)
+    .maybeSingle();
+  return !error && !!data;
+}
+
+type RouteParams = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   const auth = await requireApiModuleAccess("prospectos");
@@ -100,127 +120,157 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
 
-  if (!rateLimit(`prospectos-edit:${auth.userId}:${clientKey(request)}`, 80, 60_000)) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 429 });
+  if (
+    !rateLimit(`prospectos-patch:${auth.userId}:${clientKey(request)}`, 60, 60_000)
+  ) {
+    return NextResponse.json({ error: DENIED }, { status: 429 });
   }
 
-  const body = await readJsonBody(request, MAX_BODY_BYTES);
-  if (!body.ok) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: body.status });
+  const raw = await request.text();
+  if (raw.length > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: DENIED }, { status: 413 });
   }
-  const parsed = cambioSchema.safeParse(body.json);
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  const parsed = patchSchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
-  const cambio = parsed.data;
 
   const service = createServiceClient();
   const { data: actual, error: loadError } = await service
     .from("prospectos")
-    .select(
-      "id, empresa, nit, contacto, cargo, telefono, email, ciudad, canal_codigo, tipo_cliente_codigo, fuente_codigo, valor_mensual_estimado, notas, calificacion, responsable_id",
-    )
+    .select("id, activo, responsable_id, actividad, calificacion")
     .eq("id", id)
     .maybeSingle();
+
   if (loadError || !actual) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 404 });
+    return NextResponse.json({ error: DENIED }, { status: 404 });
   }
 
   const rol = auth.profile.rol;
-  const puedeEditar = canEditProspecto(rol, auth.userId, actual.responsable_id as string);
-  // Reasignar: quien puede editar o el supervisor (`asignar`), como el as-is.
-  const permitido =
-    cambio.tipo === "responsable" ? puedeEditar || can(rol, "asignar") : puedeEditar;
-  if (!permitido) {
+  const responsableId = actual.responsable_id as string;
+  const canEdit = canEditProspecto(rol, auth.userId, responsableId);
+  const body = parsed.data;
+  const today = todayBogota();
+
+  if (body.accion === "responsable") {
+    if (!canAsignarResponsable(rol, auth.userId, responsableId)) {
+      return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+    }
+  } else if (!canEdit) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
-  const ref = { tabla: "prospectos", id };
-  const empresa = actual.empresa as string;
+  const patch: Record<string, unknown> = { actualizado_por: auth.userId };
 
-  if (cambio.tipo === "calificacion") {
-    const { error } = await service
-      .from("prospectos")
-      .update({ calificacion: cambio.calificacion, actualizado_por: auth.userId })
-      .eq("id", id);
-    if (error) return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
-    await registrarBitacora(
-      service,
-      auth,
-      "Calificación",
-      `${empresa}: ${cambio.calificacion ? "★".repeat(cambio.calificacion) + " " : ""}${CALIF_TXT[cambio.calificacion]}`,
-      ref,
-    );
-  } else if (cambio.tipo === "responsable") {
-    const { data: nuevo } = await service
-      .from("profiles")
-      .select("id, nombre, rol, activo")
-      .eq("id", cambio.responsable_id)
-      .maybeSingle();
-    if (!nuevo || !nuevo.activo || !isRol(nuevo.rol)) {
-      return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+  if (body.accion === "datos") {
+    if (!(await codigoActivo(service, "canales", body.canal_codigo))) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
     }
-    const { data: anterior } = await service
+    if (!(await codigoActivo(service, "fuentes", body.fuente_codigo))) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
+    }
+    if (!(await codigoActivo(service, "tipos_cliente", body.tipo_cliente_codigo))) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
+    }
+    Object.assign(patch, {
+      empresa: body.empresa,
+      nit: body.nit,
+      contacto: body.contacto,
+      cargo: body.cargo,
+      telefono: body.telefono,
+      email: body.email,
+      ciudad: body.ciudad,
+      canal_codigo: body.canal_codigo,
+      tipo_cliente_codigo: body.tipo_cliente_codigo,
+      fuente_codigo: body.fuente_codigo,
+      valor_mensual_estimado: body.valor_mensual_estimado,
+      notas: body.notas,
+    });
+  } else if (body.accion === "calificacion") {
+    patch.calificacion = body.calificacion;
+  } else if (body.accion === "responsable") {
+    const { data: responsable, error: respError } = await service
       .from("profiles")
-      .select("nombre")
-      .eq("id", actual.responsable_id as string)
+      .select("id, activo, rol")
+      .eq("id", body.responsable_id)
       .maybeSingle();
-    const { error } = await service
-      .from("prospectos")
-      .update({ responsable_id: cambio.responsable_id, actualizado_por: auth.userId })
-      .eq("id", id);
-    if (error) return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
-    await registrarBitacora(
-      service,
-      auth,
-      "Responsable asignado",
-      `${empresa}: ${anterior?.nombre ?? "—"} → ${nuevo.nombre}`,
-      ref,
-    );
-  } else {
-    const { tipo: _tipo, ...datos } = cambio;
-    void _tipo;
     if (
-      !(await codigoCatalogoActivo(service, "canales", datos.canal_codigo)) ||
-      !(await codigoCatalogoActivo(service, "fuentes", datos.fuente_codigo)) ||
-      !(await codigoCatalogoActivo(service, "tipos_cliente", datos.tipo_cliente_codigo))
+      respError ||
+      !responsable ||
+      responsable.activo !== true ||
+      !isRol(responsable.rol as string)
     ) {
-      return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+      return NextResponse.json({ error: DENIED }, { status: 422 });
     }
-    const cambios = (Object.keys(ETIQUETAS) as Array<keyof typeof datos>)
-      .filter((k) => String(actual[k] ?? "") !== String(datos[k] ?? ""))
-      .map((k) => {
-        if (k === "valor_mensual_estimado") {
-          return `${ETIQUETAS[k]}: ${formatMoneyShort(Number(actual[k]) || 0)} → ${formatMoneyShort(datos[k])}`;
-        }
-        if (k === "notas") return "Notas";
-        return `${ETIQUETAS[k]}: ${String(actual[k] ?? "") || "—"} → ${String(datos[k] ?? "") || "—"}`;
-      });
-    const { error } = await service
-      .from("prospectos")
-      .update({ ...datos, actualizado_por: auth.userId })
-      .eq("id", id);
-    if (error) return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
-    if (cambios.length) {
-      await registrarBitacora(
-        service,
-        auth,
-        "Prospecto editado",
-        `${datos.empresa} · ${cambios.join("; ")}`,
-        ref,
-      );
+    patch.responsable_id = body.responsable_id;
+  } else if (body.accion === "inactivar") {
+    if (!isMotivoInactivo(body.motivo)) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
     }
+    patch.activo = false;
+    patch.motivo_inactivo = body.motivo;
+    patch.inactivo_en = today;
+    patch.actividad = appendActividad(actual.actividad, {
+      f: today,
+      t: "Estado",
+      x: `Inactivado · ${body.motivo}`,
+      u: auth.userId,
+    });
+  } else if (body.accion === "reactivar") {
+    patch.activo = true;
+    patch.motivo_inactivo = "";
+    patch.inactivo_en = null;
+    patch.ultimo_contacto = today;
+    patch.actividad = appendActividad(actual.actividad, {
+      f: today,
+      t: "Estado",
+      x: "Reactivado",
+      u: auth.userId,
+    });
+  } else if (body.accion === "actividad") {
+    if (actual.activo === false) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
+    }
+    if (!isTipoActividad(body.tipo)) {
+      return NextResponse.json({ error: DENIED }, { status: 422 });
+    }
+    patch.ultimo_contacto = today;
+    patch.actividad = appendActividad(actual.actividad, {
+      f: today,
+      t: body.tipo,
+      x: body.texto,
+      u: auth.userId,
+    });
   }
 
-  const ficha = await cargarFicha(service, id, rol);
-  if (!ficha) return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
-  return NextResponse.json({ ok: true, ficha });
+  const { data: updated, error: updateError } = await service
+    .from("prospectos")
+    .update(patch)
+    .eq("id", id)
+    .select(PROSPECTO_SELECT_LIST)
+    .single();
+
+  if (updateError || !updated) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    prospecto: mapProspectoRow(updated as unknown as ProspectoRow),
+  });
 }
 
-/** Elimina el prospecto y sus compromisos (as-is delPOk). Su historial se va en cascada. */
 export async function DELETE(request: Request, { params }: RouteParams) {
   const auth = await requireApiModuleAccess("prospectos");
   if (!isAuthContext(auth)) return auth;
@@ -234,29 +284,49 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 422 });
   }
 
-  if (!rateLimit(`prospectos-delete:${auth.userId}:${clientKey(request)}`, 20, 60_000)) {
+  if (
+    !rateLimit(
+      `prospectos-delete:${auth.userId}:${clientKey(request)}`,
+      20,
+      60_000,
+    )
+  ) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 429 });
   }
 
   const service = createServiceClient();
-  const { data: actual } = await service
+  const { data: actual, error: loadError } = await service
     .from("prospectos")
-    .select("id, empresa, responsable_id")
+    .select("id, responsable_id")
     .eq("id", id)
     .maybeSingle();
-  if (!actual) {
+
+  if (loadError || !actual) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 404 });
   }
-  if (!canEditProspecto(auth.profile.rol, auth.userId, actual.responsable_id as string)) {
+
+  if (
+    !canEditProspecto(
+      auth.profile.rol,
+      auth.userId,
+      actual.responsable_id as string,
+    )
+  ) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
-  await service.from("compromisos").delete().eq("prospecto_id", id);
+  const { error: compError } = await service
+    .from("compromisos")
+    .delete()
+    .eq("prospecto_id", id);
+  if (compError) {
+    return NextResponse.json({ error: DELETE_DENIED }, { status: 500 });
+  }
+
   const { error } = await service.from("prospectos").delete().eq("id", id);
   if (error) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 500 });
   }
 
-  await registrarBitacora(service, auth, "Prospecto eliminado", actual.empresa as string);
   return NextResponse.json({ ok: true });
 }

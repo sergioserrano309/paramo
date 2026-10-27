@@ -1,4 +1,4 @@
-/** Tipos de compromiso (as-is TIPOS). Mismos valores que el CHECK de `compromisos.tipo`. */
+/** Tipos de compromiso del as-is (TIPOS) y del modal «Nuevo compromiso». */
 export const TIPOS_COMPROMISO = [
   "Llamada",
   "Visita",
@@ -14,15 +14,15 @@ export const TIPOS_COMPROMISO = [
 
 export type TipoCompromiso = (typeof TIPOS_COMPROMISO)[number];
 
-/** Atajos de fecha del formulario (as-is datequick): etiqueta y días desde hoy. */
-export const ATAJOS_FECHA = [
-  { etiqueta: "Hoy", dias: 0 },
-  { etiqueta: "Mañana", dias: 1 },
-  { etiqueta: "En 3 días", dias: 3 },
-  { etiqueta: "En 1 semana", dias: 7 },
-  { etiqueta: "En 2 semanas", dias: 14 },
-] as const;
+export function isTipoCompromiso(value: string): value is TipoCompromiso {
+  return (TIPOS_COMPROMISO as readonly string[]).includes(value);
+}
 
-/** Ventana de cumplimiento y de «Hechos» visibles (días hacia atrás). */
-export const DIAS_CUMPLIMIENTO = 30;
-export const DIAS_HISTORIAL = 90;
+/** Atajos de fecha del modal (as-is datequick). El número son días desde hoy. */
+export const ATAJOS_FECHA_COMPROMISO = [
+  ["Hoy", 0],
+  ["Mañana", 1],
+  ["En 3 días", 3],
+  ["En 1 semana", 7],
+  ["En 2 semanas", 14],
+] as const;

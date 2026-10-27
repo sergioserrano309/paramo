@@ -1,732 +1,1149 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import { CompromisoFechaText } from "@/components/CompromisoFechaText";
+import { ProspectoDetalleDrawer } from "@/components/ProspectoDetalleDrawer";
+import { WhoChip } from "@/components/WhoChip";
 import {
-  ATAJOS_FECHA,
-  DIAS_CUMPLIMIENTO,
+  ATAJOS_FECHA_COMPROMISO,
   TIPOS_COMPROMISO,
+  type TipoCompromiso,
 } from "@/config/compromisos";
-import type { Rol } from "@/config/roles";
+import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
+import { ROL_LABEL, type Rol } from "@/config/roles";
 import {
-  puedeEditarCompromiso,
-  puedeMarcarCompromiso,
-} from "@/lib/compromisos-permisos";
-import { sumarDias, textoFecha } from "@/lib/fechas";
-import { initials, todayBogota } from "@/lib/format";
-import type { CompromisoItem, PersonaOption } from "@/lib/types/compromiso";
+  etiquetaFiltro,
+  etiquetaGrupo,
+  FILTROS_AGENDA,
+  grupoDe,
+  ordenarAgenda,
+  partirGrupos,
+  pasaFiltro,
+  statsDeGrupo,
+  subtituloAgenda,
+  vacioAgenda,
+  type FiltroAgenda,
+  type GrupoAgenda,
+} from "@/lib/compromisos-agenda";
+import {
+  canEditCompromiso,
+  canEditProspecto,
+  canToggleCompromiso,
+} from "@/lib/can";
+import { cn } from "@/lib/cn";
+import { addDaysYmd, todayBogota } from "@/lib/format";
+import type {
+  CompromisoAgendaItem,
+  ProspectoContactoActualizado,
+} from "@/lib/types/compromiso";
+import type {
+  EtapaCatalogo,
+  ProspectoListItem,
+  ProspectosCatalogos,
+  ResponsableOption,
+} from "@/lib/types/prospecto";
 
-type ProspectoOpcion = { id: string; empresa: string; activo: boolean };
-
-type Props = {
-  initialCompromisos: CompromisoItem[];
-  cargaFallida: boolean;
-  personas: PersonaOption[];
-  prospectos: ProspectoOpcion[];
+type CompromisosPanelProps = {
+  initialCompromisos: CompromisoAgendaItem[];
+  loadError: boolean;
+  prospectos: ProspectoListItem[];
+  etapas: EtapaCatalogo[];
+  catalogos: ProspectosCatalogos;
+  responsables: ResponsableOption[];
+  canCreate: boolean;
   userId: string;
-  rol: Rol;
-  puedeCrear: boolean;
-  /** Cambia con cada pulsación de «C» o enlace `?nuevo=…`; si no está vacío, abre el alta. */
-  nuevoToken: string;
-  prospectoInicial: string;
+  userRol: Rol;
+  /** Token de `?nuevo=` (atajo C). Si viene, abre el alta. */
+  nuevoToken?: string;
+  /** Prospecto preseleccionado cuando el alta llega con `?prospecto=`. */
+  prospectoInicial?: string;
 };
 
-type Filtro = "pendientes" | "vencidos" | "hoy" | "semana" | "asignadas" | "hechos";
+type EditorState =
+  | { mode: "new" }
+  | { mode: "edit"; compromiso: CompromisoAgendaItem };
 
-type FormState = {
+type SaveBody = {
   titulo: string;
   tipo: string;
   fecha: string;
-  prospecto_id: string;
+  prospecto_id: string | null;
   notas: string;
-  responsable_id: string;
+  responsable_id?: string;
 };
 
 const fieldClass =
-  "min-h-11 w-full rounded-lg border border-paramo-line bg-paramo-surface px-3 text-paramo-fg focus:border-paramo-teal focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft disabled:cursor-not-allowed disabled:opacity-60";
+  "min-h-11 w-full rounded-lg border border-paramo-line bg-paramo-surface px-3 text-paramo-fg focus:border-paramo-teal focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft";
 const labelClass = "text-[11.5px] font-bold text-paramo-muted";
-const btnPrimary =
+const btnPri =
   "inline-flex min-h-11 items-center justify-center rounded-full bg-paramo-brand px-5 text-sm font-bold text-paramo-brand-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
 const btnGhost =
   "inline-flex min-h-11 items-center justify-center rounded-full border border-paramo-line px-4 text-sm font-bold text-paramo-fg hover:bg-paramo-surface-2 disabled:cursor-not-allowed disabled:opacity-60";
-const btnSmall =
-  "inline-flex min-h-9 items-center justify-center rounded-full px-3 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60";
+
+function accessDe(c: CompromisoAgendaItem) {
+  return {
+    creadoPor: c.creado_por,
+    responsableId: c.responsable_id,
+    responsableRol: c.responsable_rol,
+  };
+}
 
 export function CompromisosPanel({
   initialCompromisos,
-  cargaFallida,
-  personas,
-  prospectos,
+  loadError,
+  prospectos: initialProspectos,
+  etapas,
+  catalogos,
+  responsables,
+  canCreate,
   userId,
-  rol,
-  puedeCrear,
-  nuevoToken,
-  prospectoInicial,
-}: Props) {
-  const titleId = useId();
-  const esSupervisor = rol === "supervisor";
-  const hoy = todayBogota();
-  // As-is vendorId: a quién se asigna por defecto cuando el supervisor crea una tarea.
-  // Debe declararse antes de los `useState`: el estado inicial del formulario lo usa.
-  const vendedorDefault = personas.find((p) => p.rol !== "supervisor")?.id ?? userId;
-
+  userRol,
+  nuevoToken = "",
+  prospectoInicial = "",
+}: CompromisosPanelProps) {
+  const router = useRouter();
+  const detailTitleId = useId();
   const [compromisos, setCompromisos] = useState(initialCompromisos);
-  const [filtro, setFiltro] = useState<Filtro>("pendientes");
-  // As-is: el comercial arranca viendo lo suyo; el supervisor, todos los responsables.
-  const [resp, setResp] = useState<string>(esSupervisor ? "" : userId);
-  // null = cerrado; "nuevo" = alta; uuid = edición.
-  const [abierto, setAbierto] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(() => formVacio());
+  const [prospectos, setProspectos] = useState(initialProspectos);
+  const [filtro, setFiltro] = useState<FiltroAgenda>("pendientes");
+  const [grupo, setGrupo] = useState<GrupoAgenda | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [lostForId, setLostForId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [cargando, setCargando] = useState(false);
+  const [ok, setOk] = useState<string | null>(null);
 
   useEffect(() => {
-    setCompromisos(initialCompromisos);
-  }, [initialCompromisos]);
+    if (nuevoToken && canCreate) setEditor({ mode: "new" });
+  }, [nuevoToken, canCreate]);
 
-  // Atajo «C» o enlace con `?nuevo=…` (Supervisión, ficha del prospecto): abre el alta, con
-  // el prospecto si viene.
-  useEffect(() => {
-    if (nuevoToken && puedeCrear) {
-      setForm({ ...formVacio(), prospecto_id: prospectoInicial });
-      setAbierto("nuevo");
-    }
-    // formVacio depende solo de props estables; el token es lo que dispara la apertura.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nuevoToken, puedeCrear, prospectoInicial]);
+  const hoy = todayBogota();
+  const supervisor = userRol === "supervisor";
+  const base = grupo
+    ? compromisos.filter((c) => grupoDe(c) === grupo)
+    : compromisos;
+  const coinciden = base.filter((c) =>
+    pasaFiltro(c, filtro, hoy, userId, userRol),
+  );
+  const ordenados = ordenarAgenda(coinciden, filtro);
+  const grupos = partirGrupos(ordenados, filtro, hoy);
+  const vacio = vacioAgenda(filtro);
+  const subtitulo = subtituloAgenda(
+    base,
+    hoy,
+    grupo ? etiquetaGrupo(grupo) : null,
+  );
 
-  useEffect(() => {
-    if (!abierto) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") cerrar();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [abierto]);
+  const counts = Object.fromEntries(
+    FILTROS_AGENDA.map((f) => [
+      f,
+      base.filter((c) => pasaFiltro(c, f, hoy, userId, userRol)).length,
+    ]),
+  ) as Record<FiltroAgenda, number>;
 
-  function formVacio(): FormState {
-    return {
-      titulo: "",
-      tipo: "Llamada",
-      fecha: sumarDias(todayBogota(), 1),
-      prospecto_id: "",
-      notas: "",
-      responsable_id: esSupervisor ? vendedorDefault : userId,
-    };
-  }
+  const prospectById = new Map(prospectos.map((p) => [p.id, p]));
+  const openProspecto = openId ? (prospectById.get(openId) ?? null) : null;
+  const lostProspecto = lostForId
+    ? (prospectById.get(lostForId) ?? null)
+    : null;
+  const etapaIndex = new Map(etapas.map((e, i) => [e.codigo, i]));
 
-  const actual =
-    abierto && abierto !== "nuevo" ? (compromisos.find((c) => c.id === abierto) ?? null) : null;
-  const esNuevo = abierto === "nuevo";
-
-  function cerrar() {
-    setAbierto(null);
-    setError(null);
-  }
-
-  function abrirNuevo() {
-    setError(null);
-    setAviso(null);
-    setForm(formVacio());
-    setAbierto("nuevo");
-  }
-
-  function abrirEdicion(c: CompromisoItem) {
-    setError(null);
-    setAviso(null);
-    setForm({
-      titulo: c.titulo,
-      tipo: c.tipo,
-      fecha: c.fecha,
-      prospecto_id: c.prospecto_id ?? "",
-      notas: c.notas,
-      responsable_id: c.responsable_id,
+  function upsert(item: CompromisoAgendaItem) {
+    setCompromisos((prev) => {
+      const i = prev.findIndex((c) => c.id === item.id);
+      if (i === -1) return [item, ...prev];
+      const next = prev.slice();
+      next[i] = item;
+      return next;
     });
-    setAbierto(c.id);
   }
 
-  function guardarEnLista(c: CompromisoItem) {
-    setCompromisos((prev) =>
-      prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c],
+  function applyContacto(contacto: ProspectoContactoActualizado | null) {
+    if (!contacto) return;
+    setProspectos((prev) =>
+      prev.map((p) =>
+        p.id === contacto.id
+          ? { ...p, ultimo_contacto: contacto.ultimo_contacto }
+          : p,
+      ),
     );
   }
 
-  async function llamar<T>(
-    url: string,
-    method: "POST" | "PATCH" | "DELETE",
-    body?: unknown,
-  ): Promise<T> {
-    const res = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const json = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-    if (!res.ok || !json) throw new Error(json?.error ?? "No se pudo completar la acción.");
-    return json;
+  async function onToggle(c: CompromisoAgendaItem) {
+    if (!canToggleCompromiso(userRol, userId, accessDe(c)) || busyId) return;
+    setError(null);
+    setOk(null);
+    setBusyId(c.id);
+    try {
+      const res = await fetch(`/api/compromisos/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hecho: !c.hecho }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        compromiso?: CompromisoAgendaItem;
+        prospecto_contacto?: ProspectoContactoActualizado | null;
+      } | null;
+      if (!res.ok || !body?.compromiso) {
+        throw new Error(body?.error ?? "No se pudo guardar el compromiso.");
+      }
+      upsert(body.compromiso);
+      applyContacto(body.prospecto_contacto ?? null);
+      if (body.compromiso.hecho) setOk("Compromiso cumplido");
+      router.refresh();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo guardar el compromiso.",
+      );
+    } finally {
+      setBusyId(null);
+    }
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function onSave(input: SaveBody, editingId: string | null) {
     setError(null);
-    if (!form.titulo.trim()) {
-      setError("Escribe qué hay que hacer.");
+    setOk(null);
+    const res = await fetch(
+      editingId ? `/api/compromisos/${editingId}` : "/api/compromisos",
+      {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+      compromiso?: CompromisoAgendaItem;
+    } | null;
+    if (!res.ok || !body?.compromiso) {
+      throw new Error(body?.error ?? "No se pudo guardar el compromiso.");
+    }
+    upsert(body.compromiso);
+    setEditor(null);
+    if (!editingId && body.compromiso.asignado) {
+      setOk(`Tarea asignada a ${body.compromiso.responsable_nombre}`);
+    } else if (!editingId) {
+      setOk("Compromiso agendado");
+    } else {
+      setOk("Compromiso actualizado");
+    }
+    router.refresh();
+  }
+
+  async function onDelete(id: string) {
+    setError(null);
+    setOk(null);
+    const res = await fetch(`/api/compromisos/${id}`, { method: "DELETE" });
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      throw new Error(body?.error ?? "No se pudo eliminar el compromiso.");
+    }
+    setCompromisos((prev) => prev.filter((c) => c.id !== id));
+    setEditor(null);
+    setOk("Compromiso eliminado");
+    router.refresh();
+  }
+
+  async function patchEtapa(
+    id: string,
+    etapa_codigo: string,
+    motivo_perdida?: string,
+  ) {
+    const res = await fetch(`/api/prospectos/${id}/etapa`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        etapa_codigo,
+        motivo_perdida: motivo_perdida ?? "",
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+      prospecto?: ProspectoListItem;
+    } | null;
+    if (!res.ok || !body?.prospecto) {
+      throw new Error(body?.error ?? "No se pudo actualizar la etapa.");
+    }
+    return body.prospecto;
+  }
+
+  async function moveToStage(id: string, etapa_codigo: string, motivo?: string) {
+    const p = prospectById.get(id);
+    if (!p || p.etapa_codigo === etapa_codigo) return;
+    if (!canEditProspecto(userRol, userId, p.responsable_id)) {
+      setError("No autorizado para mover este prospecto.");
       return;
     }
-    setCargando(true);
-    try {
-      const payload = {
-        titulo: form.titulo.trim(),
-        tipo: form.tipo,
-        fecha: form.fecha,
-        prospecto_id: form.prospecto_id || null,
-        notas: form.notas,
-        responsable_id: esSupervisor ? form.responsable_id : undefined,
-      };
-      const res = esNuevo
-        ? await llamar<{ compromiso: CompromisoItem }>("/api/compromisos", "POST", payload)
-        : await llamar<{ compromiso: CompromisoItem }>(
-            `/api/compromisos/${actual?.id}`,
-            "PATCH",
-            payload,
-          );
-      guardarEnLista(res.compromiso);
-      setAbierto(null);
-      setAviso(
-        !esNuevo
-          ? "Compromiso actualizado."
-          : res.compromiso.asignado
-            ? `Tarea asignada a ${res.compromiso.responsable_nombre}.`
-            : "Compromiso agendado.",
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar el compromiso.");
-    } finally {
-      setCargando(false);
+    if (etapa_codigo === "perdido" && motivo === undefined) {
+      setLostForId(id);
+      return;
     }
-  }
-
-  async function marcar(c: CompromisoItem) {
     setError(null);
+    setOk(null);
+    setMovingId(id);
     try {
-      const res = await llamar<{ compromiso: CompromisoItem }>(
-        `/api/compromisos/${c.id}/hecho`,
-        "POST",
-        { hecho: !c.hecho },
+      const updated = await patchEtapa(id, etapa_codigo, motivo);
+      setProspectos((prev) => prev.map((x) => (x.id === id ? updated : x)));
+      if (etapa_codigo === "ganado") setOk(`${updated.empresa} ganado`);
+      router.refresh();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo actualizar la etapa.",
       );
-      guardarEnLista(res.compromiso);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo actualizar el compromiso.");
-    }
-  }
-
-  async function eliminar() {
-    if (!actual) return;
-    setCargando(true);
-    setError(null);
-    try {
-      await llamar<{ ok: true }>(`/api/compromisos/${actual.id}`, "DELETE");
-      setCompromisos((prev) => prev.filter((c) => c.id !== actual.id));
-      setAbierto(null);
-      setAviso("Compromiso eliminado.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo eliminar el compromiso.");
     } finally {
-      setCargando(false);
+      setMovingId(null);
     }
   }
 
-  const base = useMemo(
-    () => compromisos.filter((c) => !resp || c.responsable_id === resp),
-    [compromisos, resp],
-  );
-  const pend = base.filter((c) => !c.hecho);
-  const semanaFin = sumarDias(hoy, 7);
-  const conteo: Record<Filtro, number> = {
-    vencidos: pend.filter((c) => c.fecha < hoy).length,
-    hoy: pend.filter((c) => c.fecha === hoy).length,
-    semana: pend.filter((c) => c.fecha >= hoy && c.fecha <= semanaFin).length,
-    pendientes: pend.length,
-    asignadas: pend.filter((c) => c.asignado).length,
-    hechos: base.filter((c) => c.hecho).length,
-  };
-
-  let lista: CompromisoItem[];
-  if (filtro === "vencidos") lista = pend.filter((c) => c.fecha < hoy);
-  else if (filtro === "hoy") lista = pend.filter((c) => c.fecha === hoy);
-  else if (filtro === "semana") lista = pend.filter((c) => c.fecha >= hoy && c.fecha <= semanaFin);
-  else if (filtro === "asignadas") lista = pend.filter((c) => c.asignado);
-  else if (filtro === "hechos") lista = base.filter((c) => c.hecho);
-  else lista = pend;
-  lista = [...lista].sort((a, b) =>
-    filtro === "hechos"
-      ? (b.hecho_en ?? b.fecha).localeCompare(a.hecho_en ?? a.fecha)
-      : a.fecha.localeCompare(b.fecha),
-  );
-  if (filtro === "hechos") lista = lista.slice(0, 100);
-
-  const desde30 = sumarDias(hoy, -DIAS_CUMPLIMIENTO);
-  const ventana = base.filter((c) => c.fecha >= desde30 && c.fecha <= hoy);
-  const cumplidos = ventana.filter((c) => c.hecho).length;
-  const personaResp = personas.find((p) => p.id === resp);
-
-  const filtros: Array<[Filtro, string]> = [
-    ["pendientes", "Pendientes"],
-    ["vencidos", "Vencidos"],
-    ["hoy", "Hoy"],
-    ["semana", "7 días"],
-    ["asignadas", esSupervisor ? "Asignadas por mí" : "Asignadas"],
-    ["hechos", "Hechos"],
-  ];
-
-  // Opciones del selector de responsable (as-is respSel).
-  const opcionesResp = personas.filter((p) => esSupervisor || p.rol !== "supervisor");
-
-  function etiquetaGrupo(c: CompromisoItem): string {
-    if (c.hecho) return "Hechos";
-    if (c.fecha < hoy) return "Vencidos";
-    if (c.fecha === hoy) return "Hoy";
-    if (c.fecha === sumarDias(hoy, 1)) return "Mañana";
-    if (c.fecha <= semanaFin) return "Próximos 7 días";
-    return "Más adelante";
+  function toggleGrupo(next: GrupoAgenda) {
+    setGrupo((current) => (current === next ? null : next));
   }
-
-  let grupoActual = "";
-  const prospectosForm = prospectos.filter((p) => p.activo || p.id === form.prospecto_id);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <header className="space-y-1">
-          <h1 className="font-paramo-display text-2xl font-bold text-paramo-fg">Compromisos</h1>
-          <p className="text-sm text-paramo-muted">
-            {ventana.length
-              ? `Cumplimiento últimos ${DIAS_CUMPLIMIENTO} días${personaResp ? ` · ${personaResp.nombre}` : ""}: ${Math.round((cumplidos / ventana.length) * 100)}% (${cumplidos} de ${ventana.length})`
-              : "Llamadas, visitas, muestras y cotizaciones pendientes"}
-          </p>
+        <header className="min-w-0 space-y-1">
+          <h1 className="font-paramo-display text-2xl font-bold text-paramo-fg">
+            Compromisos
+          </h1>
+          <p className="text-sm text-paramo-muted">{subtitulo}</p>
         </header>
-        {puedeCrear ? (
-          <button type="button" onClick={abrirNuevo} className={btnPrimary}>
-            {esSupervisor ? "Nuevo compromiso" : "Compromiso"}
+        {canCreate ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setEditor({ mode: "new" });
+            }}
+            className={btnPri}
+          >
+            + Nuevo compromiso
           </button>
         ) : null}
       </div>
 
-      {aviso && !abierto ? (
+      {ok ? (
         <p className="text-sm text-paramo-good" role="status">
-          {aviso}
+          {ok}
         </p>
       ) : null}
-      {error && !abierto ? (
+      {error ? (
         <p className="text-sm text-paramo-bad" role="alert">
           {error}
         </p>
       ) : null}
-      {cargaFallida ? (
-        <p className="text-sm text-paramo-bad" role="alert">
-          No se pudieron cargar los compromisos. Revisa que la migración de compromisos esté
-          aplicada en Supabase.
-        </p>
+
+      {supervisor ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TarjetaGrupo
+            grupo="comercial"
+            selected={grupo === "comercial"}
+            items={compromisos.filter((c) => grupoDe(c) === "comercial")}
+            hoy={hoy}
+            onClick={() => toggleGrupo("comercial")}
+          />
+          <TarjetaGrupo
+            grupo="supervisor"
+            selected={grupo === "supervisor"}
+            items={compromisos.filter((c) => grupoDe(c) === "supervisor")}
+            hoy={hoy}
+            onClick={() => toggleGrupo("supervisor")}
+          />
+        </div>
       ) : null}
 
-      {esSupervisor ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {personas.map((p) => {
-            const mios = compromisos.filter((c) => c.responsable_id === p.id);
-            const pe = mios.filter((c) => !c.hecho);
-            const ve = pe.filter((c) => c.fecha < hoy);
-            const t30 = mios.filter((c) => c.fecha >= desde30 && c.fecha <= hoy);
-            const ok30 = t30.filter((c) => c.hecho);
-            const aTiempo = ok30.filter((c) => (c.hecho_en ?? "") <= c.fecha).length;
-            const proximo = [...pe].sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
-            return (
-              <button
-                key={p.id}
-                type="button"
-                aria-pressed={resp === p.id}
-                onClick={() => setResp(resp === p.id ? "" : p.id)}
-                className={`space-y-2 rounded-[10px] border bg-paramo-surface p-3 text-left hover:border-paramo-teal ${
-                  resp === p.id ? "border-paramo-teal" : "border-paramo-line"
-                }`}
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="Filtro de compromisos"
+      >
+        {FILTROS_AGENDA.map((f) => (
+          <button
+            key={f}
+            type="button"
+            aria-pressed={filtro === f}
+            onClick={() => setFiltro(f)}
+            className={cn(
+              "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-bold",
+              filtro === f
+                ? "border-paramo-teal bg-paramo-teal-soft text-paramo-teal-ink"
+                : "border-paramo-line bg-paramo-surface text-paramo-fg hover:bg-paramo-surface-2",
+            )}
+          >
+            {etiquetaFiltro(f, userRol)}
+            {counts[f] > 0 ? (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[11px] font-extrabold",
+                  f === "vencidos"
+                    ? "bg-paramo-surface-2 text-paramo-bad"
+                    : "bg-paramo-surface-2 text-paramo-muted",
+                )}
               >
-                <div className="flex items-center gap-2">
-                  <Avatar nombre={p.nombre} rol={p.rol} />
-                  <b className="text-paramo-fg">{p.nombre}</b>
-                  <span className="text-xs text-paramo-muted">
-                    {p.rol === "supervisor" ? "Supervisor" : "Vendedor"}
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 gap-1 text-center">
-                  <Stat valor={String(pe.length)} texto="pendientes" />
-                  <Stat valor={String(ve.length)} texto="vencidos" alerta={ve.length > 0} />
-                  <Stat
-                    valor={t30.length ? `${Math.round((ok30.length / t30.length) * 100)}%` : "—"}
-                    texto="cumplido 30 d"
-                  />
-                  <Stat
-                    valor={ok30.length ? `${Math.round((aTiempo / ok30.length) * 100)}%` : "—"}
-                    texto="a tiempo"
-                  />
-                </div>
-                <div className="text-xs text-paramo-muted">
-                  {proximo
-                    ? `Próximo: ${textoFecha(proximo.fecha)} · ${proximo.titulo}`
-                    : "Sin pendientes"}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div
-          role="group"
-          aria-label="Filtro"
-          className="inline-flex flex-wrap gap-1 rounded-full border border-paramo-line bg-paramo-surface p-1"
-        >
-          {filtros.map(([k, n]) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={filtro === k}
-              onClick={() => setFiltro(k)}
-              className={`min-h-9 rounded-full px-3 text-xs font-bold ${
-                filtro === k
-                  ? "bg-paramo-brand text-paramo-brand-ink"
-                  : "text-paramo-muted hover:bg-paramo-surface-2"
-              }`}
-            >
-              {n}
-              {conteo[k] ? (
-                <span
-                  className={`ml-1 rounded-full px-1.5 text-[10px] ${
-                    k === "vencidos" ? "bg-paramo-bad text-paramo-brand-ink" : "bg-paramo-surface-2"
-                  }`}
-                >
-                  {conteo[k]}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-        <select
-          aria-label="Responsable"
-          value={resp}
-          onChange={(e) => setResp(e.target.value)}
-          className={`${fieldClass} max-w-xs`}
-        >
-          <option value="">Todos los responsables</option>
-          {opcionesResp.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre}
-              {p.id === userId ? " (yo)" : ""}
-            </option>
-          ))}
-        </select>
+                {counts[f]}
+              </span>
+            ) : null}
+          </button>
+        ))}
       </div>
 
-      {lista.length === 0 ? (
-        <div className="rounded-[10px] border border-paramo-line bg-paramo-surface p-8 text-center">
-          <h3 className="font-paramo-display text-lg font-bold text-paramo-fg">
-            {filtro === "vencidos" ? "Nada vencido" : "Sin compromisos aquí"}
-          </h3>
-          <p className="mt-1 text-sm text-paramo-muted">
-            {filtro === "hechos"
-              ? "Los compromisos cumplidos aparecerán aquí."
-              : "Agrega uno con el botón de arriba."}
+      {loadError ? (
+        <section className="rounded-[12px] border border-paramo-line bg-paramo-surface px-4 py-8">
+          <p className="text-sm text-paramo-bad" role="alert">
+            No se pudo cargar los compromisos.
           </p>
-        </div>
+        </section>
+      ) : ordenados.length === 0 ? (
+        <section className="rounded-[12px] border border-paramo-line bg-paramo-surface px-4 py-10 text-center">
+          <h2 className="font-paramo-display text-lg font-bold text-paramo-fg">
+            {vacio.title}
+          </h2>
+          <p className="mt-1 text-sm text-paramo-muted">{vacio.body}</p>
+        </section>
       ) : (
-        <div className="rounded-[10px] border border-paramo-line bg-paramo-surface">
-          {lista.map((c) => {
-            const grupo = etiquetaGrupo(c);
-            const cabecera = grupo !== grupoActual;
-            grupoActual = grupo;
-            const puedeMarcar = puedeMarcarCompromiso(rol, userId, c);
-            const puedeEditar = puedeEditarCompromiso(rol, userId, c);
-            const mostrarResp = esSupervisor || c.responsable_id !== userId;
-            const tarde = c.hecho && c.hecho_en && c.hecho_en > c.fecha;
-            return (
-              <div key={c.id}>
-                {cabecera ? (
-                  <div
-                    className={`border-b border-paramo-line px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-wide ${
-                      grupo === "Vencidos" ? "text-paramo-bad" : "text-paramo-muted"
-                    }`}
-                  >
-                    {grupo}
-                  </div>
-                ) : null}
-                <div
-                  className={`flex items-start gap-3 border-b border-paramo-line px-3 py-3 last:border-b-0 ${
-                    c.hecho ? "opacity-60" : ""
-                  }`}
-                >
-                  <button
-                    type="button"
-                    disabled={!puedeMarcar}
-                    onClick={() => marcar(c)}
-                    aria-label={c.hecho ? "Marcar pendiente" : "Marcar hecho"}
-                    aria-pressed={c.hecho}
-                    className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
-                      c.hecho
-                        ? "border-paramo-teal bg-paramo-teal text-paramo-brand-ink"
-                        : "border-paramo-line text-transparent hover:border-paramo-teal"
-                    }`}
-                  >
-                    ✓
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-paramo-fg">{c.titulo}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-paramo-muted">
-                      <span className="rounded-full border border-paramo-line px-2 py-0.5">
-                        {c.tipo}
-                      </span>
-                      {mostrarResp ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Avatar nombre={c.responsable_nombre} rol={c.responsable_rol} pequeno />
-                          {c.responsable_nombre}
-                        </span>
-                      ) : null}
-                      {c.asignado ? (
-                        <span className="rounded-full bg-paramo-brand-soft px-2 py-0.5 font-bold text-paramo-brand">
-                          Asignada por supervisor
-                        </span>
-                      ) : null}
-                      {c.prospecto_empresa ? <span>{c.prospecto_empresa}</span> : null}
-                      {c.notas ? <span>{c.notas}</span> : null}
-                      {c.hecho && c.hecho_en ? (
-                        <span>
-                          cumplido {textoFecha(c.hecho_en)}
-                          {tarde ? <span className="text-paramo-bad"> (tarde)</span> : null}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span
-                      className={`text-[12.5px] ${
-                        c.hecho
-                          ? "text-paramo-muted"
-                          : c.fecha < hoy
-                            ? "font-bold text-paramo-bad"
-                            : c.fecha === hoy
-                              ? "font-bold text-paramo-warn"
-                              : "text-paramo-muted"
-                      }`}
-                    >
-                      {textoFecha(c.fecha)}
-                    </span>
-                    {puedeEditar ? (
-                      <button
-                        type="button"
-                        onClick={() => abrirEdicion(c)}
-                        className={`${btnSmall} text-paramo-muted hover:bg-paramo-surface-2`}
-                      >
-                        Editar
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-3">
+          {filtro === "hechos" && coinciden.length > ordenados.length ? (
+            <p className="px-1 text-xs text-paramo-muted">
+              Mostrando 100 cumplidos.
+            </p>
+          ) : null}
+          {grupos.map((g) => (
+            <section
+              key={g.label}
+              className="overflow-hidden rounded-[12px] border border-paramo-line bg-paramo-surface"
+            >
+              <h2
+                className={cn(
+                  "border-b border-paramo-line px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.08em]",
+                  g.late
+                    ? "text-paramo-bad"
+                    : "bg-paramo-surface-2 text-paramo-muted",
+                )}
+              >
+                {g.label}
+              </h2>
+              <ul>
+                {g.items.map((c) => (
+                  <FilaCompromiso
+                    key={c.id}
+                    compromiso={c}
+                    userId={userId}
+                    userRol={userRol}
+                    busy={busyId === c.id}
+                    puedeAbrir={
+                      !!c.prospecto_id && prospectById.has(c.prospecto_id)
+                    }
+                    onToggle={() => void onToggle(c)}
+                    onEdit={() => {
+                      setError(null);
+                      setEditor({ mode: "edit", compromiso: c });
+                    }}
+                    onOpenProspecto={() => {
+                      if (c.prospecto_id) setOpenId(c.prospecto_id);
+                    }}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
       )}
 
-      {abierto ? (
+      {editor ? (
+        <CompromisoFormModal
+          key={editor.mode === "edit" ? editor.compromiso.id : `new-${nuevoToken}`}
+          compromiso={editor.mode === "edit" ? editor.compromiso : null}
+          prospectoInicial={editor.mode === "new" ? prospectoInicial : ""}
+          responsables={responsables}
+          prospectos={prospectos}
+          userId={userId}
+          userRol={userRol}
+          onClose={() => setEditor(null)}
+          onSubmit={(input) =>
+            onSave(input, editor.mode === "edit" ? editor.compromiso.id : null)
+          }
+          onDelete={
+            editor.mode === "edit"
+              ? () => onDelete(editor.compromiso.id)
+              : undefined
+          }
+        />
+      ) : null}
+
+      {lostProspecto ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-paramo-fg/40 p-4"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-paramo-fg/40 p-4"
           role="presentation"
           onClick={(e) => {
-            if (e.target === e.currentTarget) cerrar();
+            if (e.target === e.currentTarget) setLostForId(null);
           }}
         >
-          <form
+          <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby={titleId}
-            onSubmit={onSubmit}
-            noValidate
-            className="flex max-h-full w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-[10px] border border-paramo-line bg-paramo-surface p-4 shadow-lg"
+            aria-label="Motivo de pérdida"
+            className="w-full max-w-md rounded-[12px] border border-paramo-line bg-paramo-surface p-4"
           >
-            <h2 id={titleId} className="font-paramo-display text-xl font-bold text-paramo-fg">
-              {esNuevo ? "Nuevo compromiso" : "Editar compromiso"}
+            <h2 className="font-paramo-display text-lg font-bold text-paramo-fg">
+              Motivo de pérdida
             </h2>
-
-            {esSupervisor ? (
-              <div className="space-y-1">
-                <label htmlFor="c-resp" className={labelClass}>
-                  ¿Quién lo hace?
-                </label>
-                <select
-                  id="c-resp"
-                  value={form.responsable_id}
-                  onChange={(e) => setForm((s) => ({ ...s, responsable_id: e.target.value }))}
-                  className={fieldClass}
-                >
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre}
-                      {p.id === userId
-                        ? " (yo)"
-                        : ` · ${p.rol === "supervisor" ? "Supervisor" : "Vendedor"}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <label htmlFor="c-titulo" className={labelClass}>
-                ¿Qué hay que hacer? *
-              </label>
-              <input
-                id="c-titulo"
-                required
-                maxLength={200}
-                autoFocus
-                value={form.titulo}
-                onChange={(e) => setForm((s) => ({ ...s, titulo: e.target.value }))}
-                placeholder="Ej. Llevar muestras de Piña Bites"
-                className={fieldClass}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="c-tipo" className={labelClass}>
-                  Tipo
-                </label>
-                <select
-                  id="c-tipo"
-                  value={form.tipo}
-                  onChange={(e) => setForm((s) => ({ ...s, tipo: e.target.value }))}
-                  className={fieldClass}
-                >
-                  {TIPOS_COMPROMISO.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="c-fecha" className={labelClass}>
-                  Fecha límite *
-                </label>
-                <input
-                  id="c-fecha"
-                  type="date"
-                  required
-                  value={form.fecha}
-                  onChange={(e) => setForm((s) => ({ ...s, fecha: e.target.value }))}
-                  className={fieldClass}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {ATAJOS_FECHA.map((a) => (
+            <p className="mt-1 text-sm text-paramo-muted">
+              {lostProspecto.empresa}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {MOTIVOS_PERDIDA.map((m) => (
                 <button
-                  key={a.etiqueta}
+                  key={m}
                   type="button"
-                  onClick={() => setForm((s) => ({ ...s, fecha: sumarDias(hoy, a.dias) }))}
-                  className={`${btnSmall} border border-paramo-line text-paramo-fg hover:bg-paramo-surface-2`}
+                  disabled={movingId === lostProspecto.id}
+                  onClick={() => {
+                    const id = lostProspecto.id;
+                    setLostForId(null);
+                    void moveToStage(id, "perdido", m);
+                  }}
+                  className="rounded-full border border-paramo-line bg-paramo-surface px-3 py-2 text-xs font-semibold text-paramo-muted hover:border-paramo-brand hover:bg-paramo-brand-soft hover:text-paramo-brand disabled:opacity-50"
                 >
-                  {a.etiqueta}
+                  {m}
                 </button>
               ))}
             </div>
-            <div className="space-y-1">
-              <label htmlFor="c-prospecto" className={labelClass}>
-                Prospecto / cliente
-              </label>
-              <select
-                id="c-prospecto"
-                value={form.prospecto_id}
-                onChange={(e) => setForm((s) => ({ ...s, prospecto_id: e.target.value }))}
-                className={fieldClass}
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setLostForId(null)}
+                className={btnGhost}
               >
-                <option value="">— Ninguno —</option>
-                {prospectosForm.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.empresa}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="c-notas" className={labelClass}>
-                Notas
-              </label>
-              <input
-                id="c-notas"
-                maxLength={500}
-                value={form.notas}
-                onChange={(e) => setForm((s) => ({ ...s, notas: e.target.value }))}
-                className={fieldClass}
-              />
-            </div>
-
-            {error ? (
-              <p className="text-sm text-paramo-bad" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-              {actual && puedeEditarCompromiso(rol, userId, actual) ? (
-                <button
-                  type="button"
-                  onClick={eliminar}
-                  disabled={cargando}
-                  className={`${btnGhost} mr-auto text-paramo-bad`}
-                >
-                  Eliminar
-                </button>
-              ) : null}
-              <button type="button" onClick={cerrar} className={btnGhost}>
                 Cancelar
               </button>
-              <button type="submit" disabled={cargando} className={btnPrimary}>
-                {cargando
-                  ? "Guardando…"
-                  : !esNuevo
-                    ? "Guardar"
-                    : esSupervisor && form.responsable_id !== userId
-                      ? "Asignar"
-                      : "Agendar"}
-              </button>
             </div>
-          </form>
+          </div>
         </div>
+      ) : null}
+
+      {openProspecto ? (
+        <ProspectoDetalleDrawer
+          titleId={detailTitleId}
+          prospecto={openProspecto}
+          etapas={etapas}
+          etapaIndex={etapaIndex}
+          canMove={canEditProspecto(
+            userRol,
+            userId,
+            openProspecto.responsable_id,
+          )}
+          moving={movingId === openProspecto.id}
+          onClose={() => setOpenId(null)}
+          onSetStage={(k) => void moveToStage(openProspecto.id, k)}
+          catalogos={catalogos}
+          prospectosAgenda={prospectos}
+          userId={userId}
+          userRol={userRol}
+          onUpdated={(next) =>
+            setProspectos((prev) =>
+              prev.map((item) => (item.id === next.id ? next : item)),
+            )
+          }
+          onDeleted={(id) => {
+            setProspectos((prev) => prev.filter((item) => item.id !== id));
+            setCompromisos((prev) =>
+              prev.filter((item) => item.prospecto_id !== id),
+            );
+            setOpenId(null);
+          }}
+          onCompromisoCreado={(creado) => {
+            setCompromisos((prev) => {
+              if (prev.some((item) => item.id === creado.id)) return prev;
+              return [creado, ...prev];
+            });
+          }}
+        />
       ) : null}
     </div>
   );
 }
 
-function Avatar({ nombre, rol, pequeno }: { nombre: string; rol: Rol; pequeno?: boolean }) {
+function TarjetaGrupo({
+  grupo,
+  selected,
+  items,
+  hoy,
+  onClick,
+}: {
+  grupo: GrupoAgenda;
+  selected: boolean;
+  items: CompromisoAgendaItem[];
+  hoy: string;
+  onClick: () => void;
+}) {
+  const stats = statsDeGrupo(items, hoy);
+  const letra = grupo === "supervisor" ? "S" : "C";
+  const subtitulo = grupo === "supervisor" ? "Supervisión" : "Vendedores";
+
   return (
-    <span
-      aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ${
-        pequeno ? "size-5 text-[9px]" : "size-8 text-xs"
-      } ${
-        rol === "supervisor"
-          ? "bg-paramo-teal-soft text-paramo-teal-ink"
-          : "bg-paramo-brand-soft text-paramo-brand"
-      }`}
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className={cn(
+        "rounded-[12px] border-2 bg-paramo-surface p-3 text-left hover:bg-paramo-surface-2",
+        selected ? "border-paramo-brand" : "border-paramo-line",
+      )}
     >
-      {initials(nombre)}
+      <span className="inline-flex items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-extrabold text-white",
+            grupo === "supervisor" ? "bg-paramo-brand" : "bg-paramo-teal",
+          )}
+          aria-hidden
+        >
+          {letra}
+        </span>
+        <span className="min-w-0 leading-tight">
+          <span className="block text-sm font-bold text-paramo-fg">
+            {etiquetaGrupo(grupo)}
+          </span>
+          <span className="block text-[11px] text-paramo-muted">{subtitulo}</span>
+        </span>
+      </span>
+      <span className="mt-3 grid grid-cols-4 gap-1 text-center">
+        <Stat n={String(stats.pendientes)} label="pendientes" />
+        <Stat
+          n={String(stats.vencidos)}
+          label="vencidos"
+          alert={stats.vencidos > 0}
+        />
+        <Stat n={stats.cumplido30} label="cumplido 30 d" />
+        <Stat n={stats.aTiempo} label="a tiempo" />
+      </span>
+      <span className="mt-2 block line-clamp-2 text-xs text-paramo-muted">
+        {stats.proximo ? (
+          <>
+            Próximo: <CompromisoFechaText fecha={stats.proximo.fecha} />
+            {" · "}
+            <span className="text-paramo-fg">{stats.proximo.titulo}</span>
+          </>
+        ) : (
+          "Sin pendientes"
+        )}
+      </span>
+    </button>
+  );
+}
+
+function Stat({
+  n,
+  label,
+  alert,
+}: {
+  n: string;
+  label: string;
+  alert?: boolean;
+}) {
+  return (
+    <span className="min-w-0">
+      <span
+        className={cn(
+          "block text-xl font-bold leading-none text-paramo-fg",
+          alert && "text-paramo-bad",
+        )}
+      >
+        {n}
+      </span>
+      <span className="mt-1 block text-[10px] leading-tight text-paramo-muted">
+        {label}
+      </span>
     </span>
   );
 }
 
-function Stat({ valor, texto, alerta }: { valor: string; texto: string; alerta?: boolean }) {
+function FilaCompromiso({
+  compromiso: c,
+  userId,
+  userRol,
+  busy,
+  puedeAbrir,
+  onToggle,
+  onEdit,
+  onOpenProspecto,
+}: {
+  compromiso: CompromisoAgendaItem;
+  userId: string;
+  userRol: Rol;
+  busy: boolean;
+  puedeAbrir: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onOpenProspecto: () => void;
+}) {
+  const access = accessDe(c);
+  const puedeMarcar = canToggleCompromiso(userRol, userId, access);
+  const puedeEditar = canEditCompromiso(userRol, userId, access);
+  const mostrarQuien = userRol === "supervisor" || c.responsable_id !== userId;
+
+  const tarde = Boolean(c.hecho && c.hecho_en && c.hecho_en > c.fecha);
+
   return (
-    <div>
-      <b className={`block text-base ${alerta ? "text-paramo-bad" : "text-paramo-fg"}`}>{valor}</b>
-      <span className="text-[10px] leading-tight text-paramo-muted">{texto}</span>
+    <li className="flex items-start justify-between gap-3 border-b border-paramo-line px-4 py-3 last:border-b-0">
+      <div className="min-w-0 flex-1 text-left">
+        <p
+          className={cn(
+            "font-semibold text-paramo-fg",
+            c.hecho && "font-medium text-paramo-muted line-through",
+          )}
+        >
+          {c.titulo}
+        </p>
+        <div className="mt-1.5 flex flex-wrap items-center justify-start gap-x-2 gap-y-1">
+          <span className="rounded-full bg-paramo-surface-2 px-2 py-0.5 text-[11px] font-bold text-paramo-muted">
+            {c.tipo}
+          </span>
+          {mostrarQuien ? (
+            <WhoChip
+              nombre={c.responsable_nombre}
+              rol={c.responsable_rol ?? "comercial"}
+              className="max-w-[11rem]"
+            />
+          ) : null}
+          {c.asignado ? (
+            <span className="rounded-full bg-paramo-brand-soft px-2 py-0.5 text-[11px] font-bold text-paramo-brand">
+              Asignada por supervisor
+            </span>
+          ) : null}
+          {c.prospecto_empresa ? (
+            puedeAbrir ? (
+              <button
+                type="button"
+                onClick={onOpenProspecto}
+                className="inline-flex min-h-11 max-w-full items-center truncate font-semibold text-paramo-teal-ink underline-offset-2 hover:underline"
+              >
+                {c.prospecto_empresa}
+              </button>
+            ) : (
+              <span className="truncate font-semibold text-paramo-fg">
+                {c.prospecto_empresa}
+              </span>
+            )
+          ) : null}
+        </div>
+        {c.notas ? (
+          <p className="mt-1 line-clamp-2 text-left text-[12.5px] leading-snug text-paramo-muted">
+            {c.notas}
+          </p>
+        ) : null}
+        <p className="mt-1.5 text-left text-[13px] text-paramo-fg">
+          <span className="font-bold">Fecha definida:</span>{" "}
+          {fechaLarga(c.fecha)}
+        </p>
+        {c.hecho && c.hecho_en ? (
+          <p className="mt-0.5 text-left text-[12.5px] text-paramo-muted">
+            Cumplido: {fechaLarga(c.hecho_en)}
+            {tarde ? (
+              <span className="font-bold text-paramo-bad"> · tarde</span>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 flex-col items-stretch gap-2 pt-0.5">
+        <button
+          type="button"
+          aria-pressed={c.hecho}
+          disabled={!puedeMarcar || busy}
+          onClick={onToggle}
+          className={cn(
+            "inline-flex min-h-11 items-center justify-center rounded-full border px-4 text-sm font-bold",
+            c.hecho
+              ? "border-paramo-teal bg-paramo-teal text-paramo-brand-ink"
+              : "border-paramo-line bg-paramo-surface text-paramo-fg hover:bg-paramo-surface-2",
+            (!puedeMarcar || busy) && "cursor-not-allowed opacity-50",
+          )}
+        >
+          Hecho
+        </button>
+        {puedeEditar ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex min-h-11 items-center justify-center rounded-full border border-paramo-line bg-paramo-surface px-4 text-sm font-bold text-paramo-fg hover:bg-paramo-surface-2"
+          >
+            Editar
+          </button>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/** Fecha de calendario en español, mes completo (sin «oct» ni «Hoy»). */
+function fechaLarga(ymd: string): string {
+  const [y, m, d] = ymd.split("-");
+  if (!y || !m || !d) return ymd;
+  return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString(
+    "es-CO",
+    { day: "numeric", month: "long", year: "numeric" },
+  );
+}
+
+function CompromisoFormModal({
+  compromiso,
+  prospectoInicial = "",
+  responsables,
+  prospectos,
+  userId,
+  userRol,
+  onClose,
+  onSubmit,
+  onDelete,
+}: {
+  compromiso: CompromisoAgendaItem | null;
+  prospectoInicial?: string;
+  responsables: ResponsableOption[];
+  prospectos: ProspectoListItem[];
+  userId: string;
+  userRol: Rol;
+  onClose: () => void;
+  onSubmit: (input: SaveBody) => Promise<void>;
+  onDelete?: () => Promise<void>;
+}) {
+  const titleId = useId();
+  const hoy = todayBogota();
+  const editing = compromiso !== null;
+  const [titulo, setTitulo] = useState(compromiso?.titulo ?? "");
+  const [tipo, setTipo] = useState<TipoCompromiso | string>(
+    compromiso?.tipo ?? "Llamada",
+  );
+  const [fecha, setFecha] = useState(
+    compromiso?.fecha ?? addDaysYmd(hoy, 1),
+  );
+  const [prospectoId, setProspectoId] = useState(
+    compromiso?.prospecto_id ?? prospectoInicial ?? "",
+  );
+  const [notas, setNotas] = useState(compromiso?.notas ?? "");
+  const [responsableId, setResponsableId] = useState(
+    compromiso?.responsable_id ?? userId,
+  );
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const opcionesResp = opcionesResponsable(responsables, compromiso);
+  const opcionesPros = opcionesProspecto(prospectos, compromiso);
+  if (
+    prospectoInicial &&
+    !opcionesPros.some((p) => p.id === prospectoInicial)
+  ) {
+    const extra = prospectos.find((p) => p.id === prospectoInicial);
+    if (extra) opcionesPros.push({ id: extra.id, empresa: extra.empresa });
+  }
+  const submitLabel = editing
+    ? "Guardar"
+    : responsableId === userId
+      ? "Agendar"
+      : "Asignar";
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape" || saving || deleting) return;
+      if (confirmDelete) setConfirmDelete(false);
+      else onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmDelete, deleting, onClose, saving]);
+
+  useEffect(() => {
+    document.getElementById("cf-titulo")?.focus();
+  }, []);
+
+  async function onFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving || deleting) return;
+    if (!titulo.trim() || !fecha) {
+      setFormError("Completa el compromiso y la fecha límite.");
+      return;
+    }
+    setFormError(null);
+    setSaving(true);
+    try {
+      await onSubmit({
+        titulo: titulo.trim(),
+        tipo,
+        fecha,
+        prospecto_id: prospectoId || null,
+        notas: notas.trim(),
+        responsable_id: userRol === "supervisor" ? responsableId : userId,
+      });
+    } catch (e) {
+      setFormError(
+        e instanceof Error ? e.message : "No se pudo guardar el compromiso.",
+      );
+      setSaving(false);
+    }
+  }
+
+  async function confirmAndDelete() {
+    if (!onDelete || deleting || saving) return;
+    setFormError(null);
+    setDeleting(true);
+    try {
+      await onDelete();
+    } catch (e) {
+      setFormError(
+        e instanceof Error ? e.message : "No se pudo eliminar el compromiso.",
+      );
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-paramo-fg/40 p-4 sm:items-center"
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving && !deleting) onClose();
+      }}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onSubmit={(e) => void onFormSubmit(e)}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[12px] border border-paramo-line bg-paramo-surface p-4"
+        autoComplete="off"
+      >
+        <h2
+          id={titleId}
+          className="font-paramo-display text-xl font-bold text-paramo-fg"
+        >
+          {editing ? "Editar compromiso" : "Nuevo compromiso"}
+        </h2>
+
+        {userRol === "supervisor" ? (
+          <div className="mt-4 space-y-1">
+            <label htmlFor="cf-resp" className={labelClass}>
+              ¿Quién lo hace?
+            </label>
+            <select
+              id="cf-resp"
+              value={responsableId}
+              onChange={(e) => setResponsableId(e.target.value)}
+              className={fieldClass}
+            >
+              {opcionesResp.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.nombre}
+                  {r.id === userId ? " (yo)" : ""} · {ROL_LABEL[r.rol]}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        <div className="mt-3 space-y-1">
+          <label htmlFor="cf-titulo" className={labelClass}>
+            ¿Qué hay que hacer? *
+          </label>
+          <input
+            id="cf-titulo"
+            required
+            maxLength={240}
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            placeholder="Ej. Llevar muestras de Piña Bites"
+            className={fieldClass}
+          />
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label htmlFor="cf-tipo" className={labelClass}>
+              Tipo
+            </label>
+            <select
+              id="cf-tipo"
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value)}
+              className={fieldClass}
+            >
+              {TIPOS_COMPROMISO.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+              {TIPOS_COMPROMISO.includes(tipo as TipoCompromiso) ? null : (
+                <option value={tipo}>{tipo}</option>
+              )}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="cf-fecha" className={labelClass}>
+              Fecha límite *
+            </label>
+            <input
+              id="cf-fecha"
+              type="date"
+              required
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              className={fieldClass}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {ATAJOS_FECHA_COMPROMISO.map(([label, days]) => {
+            const valor = addDaysYmd(hoy, days);
+            const activo = fecha === valor;
+            return (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={activo}
+                onClick={() => setFecha(valor)}
+                className={cn(
+                  "inline-flex min-h-11 items-center rounded-full border px-3 text-sm font-bold",
+                  activo
+                    ? "border-paramo-teal bg-paramo-teal-soft text-paramo-teal-ink"
+                    : "border-paramo-line text-paramo-fg hover:bg-paramo-surface-2",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 space-y-1">
+          <label htmlFor="cf-prospecto" className={labelClass}>
+            Prospecto / cliente
+          </label>
+          <select
+            id="cf-prospecto"
+            value={prospectoId}
+            onChange={(e) => setProspectoId(e.target.value)}
+            className={fieldClass}
+          >
+            <option value="">— Ninguno —</option>
+            {opcionesPros.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.empresa}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-3 space-y-1">
+          <label htmlFor="cf-notas" className={labelClass}>
+            Notas
+          </label>
+          <textarea
+            id="cf-notas"
+            rows={3}
+            maxLength={4000}
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            className={cn(fieldClass, "min-h-[88px] py-2")}
+          />
+        </div>
+
+        {formError ? (
+          <p className="mt-3 text-sm text-paramo-bad" role="alert">
+            {formError}
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          {onDelete && confirmDelete ? (
+            <p className="mr-auto text-sm text-paramo-fg">
+              ¿Eliminar este compromiso?
+            </p>
+          ) : null}
+          {onDelete && !confirmDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={saving || deleting}
+              className="mr-auto inline-flex min-h-11 items-center text-sm font-bold text-paramo-bad hover:underline disabled:opacity-60"
+            >
+              Eliminar
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmDelete) setConfirmDelete(false);
+              else onClose();
+            }}
+            disabled={saving || deleting}
+            className={btnGhost}
+          >
+            Cancelar
+          </button>
+          {confirmDelete && onDelete ? (
+            <button
+              type="button"
+              onClick={() => void confirmAndDelete()}
+              disabled={deleting}
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-paramo-bad px-5 text-sm font-bold text-paramo-brand-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? "…" : "Eliminar"}
+            </button>
+          ) : (
+            <button type="submit" disabled={saving || deleting} className={btnPri}>
+              {saving ? "…" : submitLabel}
+            </button>
+          )}
+        </div>
+      </form>
     </div>
   );
+}
+
+function opcionesProspecto(
+  prospectos: ProspectoListItem[],
+  editing: CompromisoAgendaItem | null,
+): { id: string; empresa: string }[] {
+  const list = prospectos
+    .filter((p) => p.activo)
+    .map((p) => ({ id: p.id, empresa: p.empresa }))
+    .sort((a, b) => a.empresa.localeCompare(b.empresa, "es"));
+  if (
+    editing?.prospecto_id &&
+    !list.some((p) => p.id === editing.prospecto_id)
+  ) {
+    list.push({
+      id: editing.prospecto_id,
+      empresa: editing.prospecto_empresa || "Prospecto vinculado",
+    });
+  }
+  return list;
+}
+
+function opcionesResponsable(
+  responsables: ResponsableOption[],
+  editing: CompromisoAgendaItem | null,
+): ResponsableOption[] {
+  if (
+    !editing?.responsable_id ||
+    !editing.responsable_rol ||
+    responsables.some((r) => r.id === editing.responsable_id)
+  ) {
+    return responsables;
+  }
+  return [
+    ...responsables,
+    {
+      id: editing.responsable_id,
+      nombre: editing.responsable_nombre,
+      rol: editing.responsable_rol,
+    },
+  ];
 }

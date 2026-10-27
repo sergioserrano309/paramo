@@ -1,11 +1,11 @@
 import { ProspectosPanel } from "@/components/ProspectosPanel";
 import { isRol } from "@/config/roles";
+import { fetchProximosPorProspecto } from "@/lib/compromisos";
 import {
   canCreateProspecto,
   requireModuleAccess,
 } from "@/lib/permissions";
 import {
-  adjuntarSeguimiento,
   mapProspectoRow,
   PROSPECTO_SELECT_LIST,
   type ProspectoRow,
@@ -73,13 +73,17 @@ export default async function ProspectosPage({ searchParams }: PageProps) {
       .limit(200),
   ]);
 
-  let prospectos: ProspectoListItem[] = [];
+  const prospectos: ProspectoListItem[] = [];
   if (!prospectosRes.error && prospectosRes.data) {
     for (const row of prospectosRes.data as unknown as ProspectoRow[]) {
       prospectos.push(mapProspectoRow(row));
     }
-    prospectos = await adjuntarSeguimiento(service, prospectos);
   }
+
+  const proximosPorProspecto = await fetchProximosPorProspecto(
+    service,
+    prospectos.map((p) => p.id),
+  );
 
   const responsables: ResponsableOption[] = [];
   if (!profilesRes.error && profilesRes.data) {
@@ -109,7 +113,6 @@ export default async function ProspectosPage({ searchParams }: PageProps) {
     responsables,
   };
 
-  // As-is: responsable por defecto = usuario actual (comercial o supervisor).
   const defaultResponsableId = ctx.userId;
 
   return (
@@ -120,7 +123,7 @@ export default async function ProspectosPage({ searchParams }: PageProps) {
       defaultResponsableId={defaultResponsableId}
       userId={ctx.userId}
       userRol={ctx.profile.rol}
-      // Atajo de teclado «N» y enlaces desde Supervisión / Dashboard / Bitácora.
+      proximosPorProspecto={proximosPorProspecto}
       nuevoToken={sp.nuevo ?? ""}
       abrirInicial={sp.abrir && UUID.test(sp.abrir) ? sp.abrir : ""}
     />

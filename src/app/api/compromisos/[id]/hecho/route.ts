@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
-import { cargarCompromiso } from "@/lib/compromisos";
-import { puedeMarcarCompromiso } from "@/lib/compromisos-permisos";
+import { canToggleCompromiso } from "@/lib/can";
+import { fetchCompromisoAgendaById } from "@/lib/compromisos";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { registrarActividad } from "@/lib/actividad";
 import { registrarBitacora } from "@/lib/bitacora";
@@ -48,29 +48,38 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const service = createServiceClient();
-  const actual = await cargarCompromiso(service, id);
+  const cargado = await fetchCompromisoAgendaById(service, id);
+  if (cargado.error) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
+  }
+  const actual = cargado.item;
   if (!actual) {
     return NextResponse.json({ error: DENIED }, { status: 404 });
   }
-  if (!puedeMarcarCompromiso(auth.profile.rol, auth.userId, actual)) {
+  if (
+    !canToggleCompromiso(auth.profile.rol, auth.userId, {
+      creadoPor: actual.creado_por,
+      responsableId: actual.responsable_id,
+      responsableRol: actual.responsable_rol,
+    })
+  ) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
   const hoy = todayBogota();
   const { hecho } = parsed.data;
+  // Sin `actualizado_por`: la tabla de main no tiene esa columna.
   const { error } = await service
     .from("compromisos")
     .update({
       hecho,
       hecho_en: hecho ? hoy : null,
-      actualizado_por: auth.userId,
     })
     .eq("id", id);
   if (error) {
     return NextResponse.json({ error: DENIED }, { status: 500 });
   }
 
-  // Al cumplirlo, el historial del prospecto lo registra y hoy queda como último contacto.
   if (hecho && actual.prospecto_id) {
     await registrarActividad(service, {
       prospectoId: actual.prospecto_id,
@@ -90,9 +99,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     actual.prospecto_id ? { tabla: "prospectos", id: actual.prospecto_id } : undefined,
   );
 
-  const compromiso = await cargarCompromiso(service, id);
-  if (!compromiso) {
+  const despues = await fetchCompromisoAgendaById(service, id);
+  if (despues.error || !despues.item) {
     return NextResponse.json({ error: DENIED }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, compromiso });
+  return NextResponse.json({ ok: true, compromiso: despues.item });
 }

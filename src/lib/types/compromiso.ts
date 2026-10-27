@@ -1,25 +1,34 @@
 import type { Rol } from "@/config/roles";
-import type { TipoCompromiso } from "@/config/compromisos";
 
-export type CompromisoItem = {
+/** Próximo compromiso pendiente por prospecto (nextComp del as-is). */
+export type ProximoCompromiso = {
+  id: string;
+  prospecto_id: string;
+  titulo: string;
+  tipo: string;
+  fecha: string;
+};
+
+/** Fila de la agenda /compromisos. */
+export type CompromisoAgendaItem = {
   id: string;
   titulo: string;
-  tipo: TipoCompromiso;
+  tipo: string;
   fecha: string;
   prospecto_id: string | null;
   prospecto_empresa: string | null;
-  notas: string;
   hecho: boolean;
   hecho_en: string | null;
-  responsable_id: string;
-  responsable_nombre: string;
-  responsable_rol: Rol;
+  notas: string;
   asignado: boolean;
+  responsable_id: string | null;
+  responsable_nombre: string;
+  responsable_rol: Rol | null;
   creado_por: string | null;
 };
 
-export type PersonaOption = {
+/** Al marcar cumplido, la API devuelve el día escrito en el prospecto. */
+export type ProspectoContactoActualizado = {
   id: string;
-  nombre: string;
-  rol: Rol;
+  ultimo_contacto: string;
 };

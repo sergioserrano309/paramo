@@ -1,27 +1,59 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isTipoCompromiso } from "@/config/compromisos";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
-import { registrarBitacora } from "@/lib/bitacora";
 import {
-  cargarCompromiso,
-  compromisoSchema,
-  responsableValido,
+  fetchCompromisoAgendaById,
+  prospectoExiste,
+  responsableActivo,
 } from "@/lib/compromisos";
-import { puedeEditarCompromiso } from "@/lib/compromisos-permisos";
 import { hasSupabaseServiceConfig } from "@/lib/env";
-import { fechaCorta } from "@/lib/fechas";
-import { clientKey, readJsonBody } from "@/lib/http";
-import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
+import { isFechaCompromiso, todayBogota } from "@/lib/format";
+import {
+  canEditCompromiso,
+  canToggleCompromiso,
+  isAuthContext,
+  puedeVerCompromiso,
+  requireApiModuleAccess,
+} from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
+import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 
-const MAX_BODY_BYTES = 4_096;
-const SAVE_DENIED = "No se pudo guardar el compromiso.";
+const MAX_BODY_BYTES = 16_384;
+const DENIED = "No se pudo guardar el compromiso.";
 const DELETE_DENIED = "No se pudo eliminar el compromiso.";
+
+const patchSchema = z
+  .object({
+    titulo: z.string().trim().min(1).max(240).optional(),
+    tipo: z.string().trim().min(1).max(40).optional(),
+    fecha: z.string().trim().optional(),
+    prospecto_id: z.union([z.string().uuid(), z.null()]).optional(),
+    notas: z.string().max(4000).optional(),
+    responsable_id: z.string().uuid().optional(),
+    hecho: z.boolean().optional(),
+  })
+  .refine((body) => Object.values(body).some((v) => v !== undefined));
+
+function clientKey(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function accessDe(item: CompromisoAgendaItem) {
+  return {
+    creadoPor: item.creado_por,
+    responsableId: item.responsable_id,
+    responsableRol: item.responsable_rol,
+  };
+}
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-/** Edita un compromiso (as-is cForm con `old`). Solo el supervisor reasigna. */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const auth = await requireApiModuleAccess("compromisos");
   if (!isAuthContext(auth)) return auth;
@@ -32,92 +64,203 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
 
   if (
-    !rateLimit(`compromisos-update:${auth.userId}:${clientKey(request)}`, 60, 60_000)
+    !rateLimit(`compromisos-patch:${auth.userId}:${clientKey(request)}`, 60, 60_000)
   ) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 429 });
+    return NextResponse.json({ error: DENIED }, { status: 429 });
   }
 
-  const body = await readJsonBody(request, MAX_BODY_BYTES);
-  if (!body.ok) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: body.status });
+  const raw = await request.text();
+  if (raw.length > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: DENIED }, { status: 413 });
   }
-  const parsed = compromisoSchema.safeParse(body.json);
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  const parsed = patchSchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+    return NextResponse.json({ error: DENIED }, { status: 422 });
   }
-  const datos = parsed.data;
+
+  const body = parsed.data;
+  if (body.tipo !== undefined && !isTipoCompromiso(body.tipo)) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+  if (body.fecha !== undefined && !isFechaCompromiso(body.fecha)) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
 
   const service = createServiceClient();
-  const anterior = await cargarCompromiso(service, id);
-  if (!anterior) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 404 });
+  const loaded = await fetchCompromisoAgendaById(service, id);
+  if (loaded.error) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
   }
+  if (!loaded.item) {
+    return NextResponse.json({ error: DENIED }, { status: 404 });
+  }
+
+  const existing = loaded.item;
   const rol = auth.profile.rol;
-  if (!puedeEditarCompromiso(rol, auth.userId, anterior)) {
+  const access = accessDe(existing);
+
+  if (!puedeVerCompromiso(rol, auth.userId, existing.responsable_id)) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
-  const esSupervisor = rol === "supervisor";
-  const responsableId = esSupervisor
-    ? (datos.responsable_id ?? auth.userId)
-    : anterior.responsable_id;
-  const responsable = await responsableValido(service, responsableId);
-  // El responsable actual puede haberse desactivado: solo se exige válido si cambia.
-  if (!responsable && responsableId !== anterior.responsable_id) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+  if (
+    rol !== "supervisor" &&
+    body.responsable_id &&
+    body.responsable_id !== existing.responsable_id
+  ) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
-  let empresa = anterior.prospecto_empresa ?? "";
-  if (datos.prospecto_id && datos.prospecto_id !== anterior.prospecto_id) {
-    const { data: p } = await service
-      .from("prospectos")
-      .select("empresa")
-      .eq("id", datos.prospecto_id)
-      .maybeSingle();
-    if (!p) {
-      return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
+  const nextResponsable =
+    rol === "supervisor" && body.responsable_id
+      ? body.responsable_id
+      : existing.responsable_id;
+
+  const nextNotas =
+    body.notas !== undefined ? body.notas.trim() : existing.notas;
+  if (nextNotas.length > 4000) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  const next = {
+    titulo: body.titulo ?? existing.titulo,
+    tipo: body.tipo ?? existing.tipo,
+    fecha: body.fecha ?? existing.fecha,
+    prospecto_id:
+      body.prospecto_id !== undefined
+        ? body.prospecto_id
+        : existing.prospecto_id,
+    notas: nextNotas,
+    hecho: body.hecho !== undefined ? body.hecho : existing.hecho,
+  };
+
+  const marking = next.hecho !== existing.hecho;
+  const editing =
+    next.titulo !== existing.titulo ||
+    next.tipo !== existing.tipo ||
+    next.fecha !== existing.fecha ||
+    next.prospecto_id !== existing.prospecto_id ||
+    next.notas !== existing.notas ||
+    nextResponsable !== existing.responsable_id;
+
+  if (!marking && !editing) {
+    return NextResponse.json({ ok: true, compromiso: existing, prospecto_contacto: null });
+  }
+
+  if (marking && !canToggleCompromiso(rol, auth.userId, access)) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+  }
+  if (editing && !canEditCompromiso(rol, auth.userId, access)) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+  }
+
+  if (
+    nextResponsable &&
+    nextResponsable !== existing.responsable_id &&
+    !(await responsableActivo(service, nextResponsable))
+  ) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  if (
+    next.prospecto_id &&
+    next.prospecto_id !== existing.prospecto_id &&
+    !(await prospectoExiste(service, next.prospecto_id))
+  ) {
+    return NextResponse.json({ error: DENIED }, { status: 422 });
+  }
+
+  const today = todayBogota();
+  const patch: Record<string, unknown> = {
+    titulo: next.titulo,
+    tipo: next.tipo,
+    fecha: next.fecha,
+    prospecto_id: next.prospecto_id,
+    notas: next.notas,
+  };
+
+  if (marking) {
+    patch.hecho = next.hecho;
+    patch.hecho_en = next.hecho ? today : null;
+  }
+
+  if (nextResponsable !== existing.responsable_id) {
+    patch.responsable_id = nextResponsable;
+    if (rol === "supervisor" && nextResponsable) {
+      patch.asignado = nextResponsable !== auth.userId;
     }
-    empresa = p.empresa as string;
   }
-  if (!datos.prospecto_id) empresa = "";
 
-  const asignado = esSupervisor ? responsableId !== auth.userId : anterior.asignado;
-  const { error } = await service
+  const { error: updateError } = await service
     .from("compromisos")
-    .update({
-      titulo: datos.titulo,
-      tipo: datos.tipo,
-      fecha: datos.fecha,
-      prospecto_id: datos.prospecto_id ?? null,
-      notas: datos.notas,
-      responsable_id: responsableId,
-      asignado,
-      actualizado_por: auth.userId,
-    })
+    .update(patch)
     .eq("id", id);
-  if (error) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
+
+  if (updateError) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
   }
 
-  const reasignado = responsableId !== anterior.responsable_id;
-  const nombreResp = responsable?.nombre ?? anterior.responsable_nombre;
-  await registrarBitacora(
-    service,
-    auth,
-    reasignado ? "Compromiso reasignado" : "Compromiso editado",
-    `${empresa ? empresa + ": " : ""}${datos.titulo} · ${fechaCorta(datos.fecha)} · responsable ${nombreResp}${reasignado ? ` (antes ${anterior.responsable_nombre})` : ""}${anterior.fecha !== datos.fecha ? ` · fecha antes ${fechaCorta(anterior.fecha)}` : ""}`,
-    datos.prospecto_id ? { tabla: "prospectos", id: datos.prospecto_id } : undefined,
-  );
+  const markingDone = next.hecho && !existing.hecho;
+  let prospectoContacto: { id: string; ultimo_contacto: string } | null = null;
 
-  const compromiso = await cargarCompromiso(service, id);
-  if (!compromiso) {
-    return NextResponse.json({ error: SAVE_DENIED }, { status: 500 });
+  if (markingDone && next.prospecto_id) {
+    const { data: touched, error: contactoError } = await service
+      .from("prospectos")
+      .update({
+        ultimo_contacto: today,
+        actualizado_por: auth.userId,
+      })
+      .eq("id", next.prospecto_id)
+      .select("id");
+
+    if (contactoError) {
+      await service
+        .from("compromisos")
+        .update({
+          titulo: existing.titulo,
+          tipo: existing.tipo,
+          fecha: existing.fecha,
+          prospecto_id: existing.prospecto_id,
+          notas: existing.notas,
+          hecho: existing.hecho,
+          hecho_en: existing.hecho_en,
+          responsable_id: existing.responsable_id,
+          asignado: existing.asignado,
+        })
+        .eq("id", id);
+      return NextResponse.json({ error: DENIED }, { status: 500 });
+    }
+
+    if (touched && touched.length > 0) {
+      prospectoContacto = {
+        id: next.prospecto_id,
+        ultimo_contacto: today,
+      };
+    }
   }
-  return NextResponse.json({ ok: true, compromiso });
+
+  const fresh = await fetchCompromisoAgendaById(service, id);
+  if (fresh.error || !fresh.item) {
+    return NextResponse.json({ error: DENIED }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    compromiso: fresh.item,
+    prospecto_contacto: prospectoContacto,
+  });
 }
 
 export async function DELETE(request: Request, { params }: RouteParams) {
@@ -134,17 +277,27 @@ export async function DELETE(request: Request, { params }: RouteParams) {
   }
 
   if (
-    !rateLimit(`compromisos-delete:${auth.userId}:${clientKey(request)}`, 30, 60_000)
+    !rateLimit(
+      `compromisos-delete:${auth.userId}:${clientKey(request)}`,
+      30,
+      60_000,
+    )
   ) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 429 });
   }
 
   const service = createServiceClient();
-  const actual = await cargarCompromiso(service, id);
-  if (!actual) {
+  const loaded = await fetchCompromisoAgendaById(service, id);
+  if (loaded.error) {
+    return NextResponse.json({ error: DELETE_DENIED }, { status: 500 });
+  }
+  if (!loaded.item) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 404 });
   }
-  if (!puedeEditarCompromiso(auth.profile.rol, auth.userId, actual)) {
+
+  if (
+    !canEditCompromiso(auth.profile.rol, auth.userId, accessDe(loaded.item))
+  ) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 
@@ -153,6 +306,5 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: DELETE_DENIED }, { status: 500 });
   }
 
-  await registrarBitacora(service, auth, "Compromiso eliminado", actual.titulo);
   return NextResponse.json({ ok: true });
 }

@@ -1,5 +1,5 @@
 import type { EstadoCotizacion } from "@/config/cotizaciones";
-import type { CompromisoItem } from "@/lib/types/compromiso";
+import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type { ObservacionItem } from "@/lib/types/observacion";
 import type { ProspectoListItem } from "@/lib/types/prospecto";
 
@@ -33,7 +33,7 @@ export type FichaProspecto = {
   motivo_inactivo: string;
   creado_por_nombre: string;
   actividad: ActividadItem[];
-  compromisos: CompromisoItem[];
+  compromisos: CompromisoAgendaItem[];
   observaciones: ObservacionItem[];
   cotizaciones: CotizacionResumen[];
   productos: ProductoInteres[];

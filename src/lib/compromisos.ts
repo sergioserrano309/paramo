@@ -1,127 +1,183 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { z } from "zod";
-import { TIPOS_COMPROMISO, DIAS_HISTORIAL } from "@/config/compromisos";
 import { isRol, type Rol } from "@/config/roles";
-import { sumarDias } from "@/lib/fechas";
-import { todayBogota } from "@/lib/format";
-import { puedeVerCompromiso } from "@/lib/compromisos-permisos";
-import type { CompromisoItem } from "@/lib/types/compromiso";
+import type {
+  CompromisoAgendaItem,
+  ProximoCompromiso,
+} from "@/lib/types/compromiso";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const COMPROMISO_SELECT = `
-  id, titulo, tipo, fecha, prospecto_id, notas, hecho, hecho_en,
-  responsable_id, asignado, creado_por,
-  responsable:profiles!compromisos_responsable_id_fkey ( nombre, rol ),
-  prospecto:prospectos!compromisos_prospecto_id_fkey ( empresa )
+/**
+ * Agenda de /compromisos. El embed de profiles nombra la FK porque
+ * creado_por también apunta a profiles.
+ */
+export const COMPROMISO_AGENDA_SELECT = `
+  id, titulo, tipo, fecha, prospecto_id, hecho, hecho_en, notas, asignado,
+  responsable_id, creado_por,
+  prospecto:prospectos!compromisos_prospecto_id_fkey ( empresa ),
+  responsable:profiles!compromisos_responsable_id_fkey ( nombre, rol )
 `;
 
-type CompromisoRow = {
+type NombreJoin = { empresa: string } | { empresa: string }[] | null;
+type ResponsableJoin =
+  | { nombre: string; rol: string }
+  | { nombre: string; rol: string }[]
+  | null;
+
+export type CompromisoAgendaRow = {
   id: string;
   titulo: string;
   tipo: string;
   fecha: string;
   prospecto_id: string | null;
-  notas: string;
   hecho: boolean;
   hecho_en: string | null;
-  responsable_id: string;
+  notas: string;
   asignado: boolean;
+  responsable_id: string | null;
   creado_por: string | null;
-  responsable: { nombre: string; rol: string } | null;
-  prospecto: { empresa: string } | null;
+  prospecto: NombreJoin;
+  responsable: ResponsableJoin;
 };
 
-export function mapCompromisoRow(row: CompromisoRow): CompromisoItem {
-  const rol: Rol = row.responsable && isRol(row.responsable.rol) ? row.responsable.rol : "comercial";
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+export function mapCompromisoAgenda(row: CompromisoAgendaRow): CompromisoAgendaItem {
+  const prospecto = one(row.prospecto);
+  const responsable = one(row.responsable);
+  const rol: Rol | null =
+    responsable && isRol(responsable.rol) ? responsable.rol : null;
   return {
     id: row.id,
     titulo: row.titulo,
-    tipo: (TIPOS_COMPROMISO as readonly string[]).includes(row.tipo)
-      ? (row.tipo as CompromisoItem["tipo"])
-      : "Otro",
+    tipo: row.tipo,
     fecha: row.fecha,
     prospecto_id: row.prospecto_id,
-    prospecto_empresa: row.prospecto?.empresa ?? null,
-    notas: row.notas ?? "",
-    hecho: row.hecho,
+    prospecto_empresa: prospecto?.empresa ?? null,
+    hecho: row.hecho === true,
     hecho_en: row.hecho_en,
+    notas: row.notas ?? "",
+    asignado: row.asignado === true,
     responsable_id: row.responsable_id,
-    responsable_nombre: row.responsable?.nombre || row.responsable_id.slice(0, 8),
+    responsable_nombre: responsable?.nombre || "—",
     responsable_rol: rol,
-    asignado: row.asignado,
     creado_por: row.creado_por,
   };
 }
 
+const AGENDA_LIMIT = 2000;
+
 /**
- * Pendientes (todos) + hechos de los últimos DIAS_HISTORIAL días, ya filtrados por lo que
- * el rol puede ver. Acotado: no se vuelca el historial completo al navegador (AGENTS §4).
+ * Lista la agenda visible. `responsableId` null = todos (supervisor).
+ * Tope 2000 por fecha ascendente: cubre vencidos antiguos y lo próximo.
+ * Devuelve null si la consulta falla.
  */
-export async function cargarCompromisos(
+export async function fetchCompromisosAgenda(
   service: SupabaseClient,
-  rol: Rol,
-): Promise<CompromisoItem[] | null> {
-  const desde = sumarDias(todayBogota(), -DIAS_HISTORIAL);
-  const [pend, hechos] = await Promise.all([
-    service
-      .from("compromisos")
-      .select(COMPROMISO_SELECT)
-      .eq("hecho", false)
-      .order("fecha", { ascending: true })
-      .limit(1_000),
-    service
-      .from("compromisos")
-      .select(COMPROMISO_SELECT)
-      .eq("hecho", true)
-      .gte("fecha", desde)
-      .order("fecha", { ascending: false })
-      .limit(1_000),
-  ]);
-  if (pend.error || hechos.error) return null;
-  const rows = [...(pend.data ?? []), ...(hechos.data ?? [])] as unknown as CompromisoRow[];
-  return rows.map(mapCompromisoRow).filter((c) => puedeVerCompromiso(rol, c));
+  responsableId: string | null,
+  prospectoId?: string | null,
+): Promise<CompromisoAgendaItem[] | null> {
+  let query = service
+    .from("compromisos")
+    .select(COMPROMISO_AGENDA_SELECT)
+    .order("fecha", { ascending: true })
+    .limit(AGENDA_LIMIT);
+
+  if (responsableId) {
+    query = query.eq("responsable_id", responsableId);
+  }
+  if (prospectoId) {
+    query = query.eq("prospecto_id", prospectoId);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return null;
+  return (data as unknown as CompromisoAgendaRow[]).map(mapCompromisoAgenda);
 }
 
-export async function cargarCompromiso(
+export async function fetchCompromisoAgendaById(
   service: SupabaseClient,
   id: string,
-): Promise<CompromisoItem | null> {
+): Promise<{ item: CompromisoAgendaItem | null; error: boolean }> {
   const { data, error } = await service
     .from("compromisos")
-    .select(COMPROMISO_SELECT)
+    .select(COMPROMISO_AGENDA_SELECT)
     .eq("id", id)
     .maybeSingle();
-  if (error || !data) return null;
-  return mapCompromisoRow(data as unknown as CompromisoRow);
+
+  if (error) return { item: null, error: true };
+  if (!data) return { item: null, error: false };
+  return {
+    item: mapCompromisoAgenda(data as unknown as CompromisoAgendaRow),
+    error: false,
+  };
 }
 
-export const compromisoSchema = z.object({
-  titulo: z.string().trim().min(1).max(200),
-  tipo: z.enum(TIPOS_COMPROMISO),
-  fecha: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .refine((f) => {
-      const d = new Date(`${f}T12:00:00Z`);
-      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === f;
-    }),
-  prospecto_id: z.string().uuid().nullable().optional(),
-  notas: z
-    .union([z.string(), z.null(), z.undefined()])
-    .transform((v) => (typeof v === "string" ? v.trim() : ""))
-    .pipe(z.string().max(500)),
-  responsable_id: z.string().uuid().nullable().optional(),
-});
+type CompromisoPendienteRow = {
+  id: string;
+  prospecto_id: string;
+  titulo: string;
+  tipo: string;
+  fecha: string;
+};
 
-/** El responsable debe ser un usuario activo. */
-export async function responsableValido(
+/**
+ * Lee pendientes con prospecto y deja el más próximo por prospecto_id
+ * (as-is nextComp: !hecho, orden por fecha).
+ * Si la tabla aún no existe en el proyecto, devuelve mapa vacío.
+ */
+export async function fetchProximosPorProspecto(
+  service: SupabaseClient,
+  prospectoIds: string[],
+): Promise<Record<string, ProximoCompromiso>> {
+  const map: Record<string, ProximoCompromiso> = {};
+  if (prospectoIds.length === 0) return map;
+
+  const { data, error } = await service
+    .from("compromisos")
+    .select("id, prospecto_id, titulo, tipo, fecha")
+    .eq("hecho", false)
+    .in("prospecto_id", prospectoIds)
+    .order("fecha", { ascending: true })
+    .limit(2000);
+
+  if (error || !data) return map;
+
+  for (const row of data as CompromisoPendienteRow[]) {
+    if (!row.prospecto_id || map[row.prospecto_id]) continue;
+    map[row.prospecto_id] = {
+      id: row.id,
+      prospecto_id: row.prospecto_id,
+      titulo: row.titulo,
+      tipo: row.tipo,
+      fecha: row.fecha,
+    };
+  }
+  return map;
+}
+
+export async function responsableActivo(
   service: SupabaseClient,
   id: string,
-): Promise<{ id: string; nombre: string; rol: Rol } | null> {
+): Promise<boolean> {
   const { data, error } = await service
     .from("profiles")
-    .select("id, nombre, rol, activo")
+    .select("id, activo, rol")
     .eq("id", id)
     .maybeSingle();
-  if (error || !data || !data.activo || !isRol(data.rol)) return null;
-  return { id: data.id as string, nombre: (data.nombre as string) || "—", rol: data.rol };
+  if (error || !data) return false;
+  return data.activo === true && isRol(data.rol as string);
+}
+
+export async function prospectoExiste(
+  service: SupabaseClient,
+  id: string,
+): Promise<boolean> {
+  const { data, error } = await service
+    .from("prospectos")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  return !error && !!data;
 }

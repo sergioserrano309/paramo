@@ -1,8 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isEstadoCotizacion } from "@/config/cotizaciones";
 import type { Rol } from "@/config/roles";
-import { COMPROMISO_SELECT, mapCompromisoRow } from "@/lib/compromisos";
-import { puedeVerCompromiso } from "@/lib/compromisos-permisos";
+import { parseActividad } from "@/lib/actividad";
+import { puedeVerCompromiso } from "@/lib/can";
+import {
+  COMPROMISO_AGENDA_SELECT,
+  mapCompromisoAgenda,
+  type CompromisoAgendaRow,
+} from "@/lib/compromisos";
 import { mapObservacionRow, OBSERVACION_SELECT } from "@/lib/observaciones";
 import { mapProspectoRow, PROSPECTO_SELECT_LIST, type ProspectoRow } from "@/lib/prospectos";
 import type { ActividadItem, FichaProspecto } from "@/lib/types/ficha";
@@ -13,37 +18,29 @@ type FilaProspecto = ProspectoRow & {
   creador: { nombre: string } | null;
 };
 
-type FilaCompromiso = Parameters<typeof mapCompromisoRow>[0];
 type FilaObservacion = Parameters<typeof mapObservacionRow>[0];
 
 /**
  * Todo lo que muestra la ficha de un prospecto (as-is openProspect), en una sola consulta
- * por parte. Los compromisos se filtran según lo que el rol puede ver.
+ * por parte. El historial sale de `prospectos.actividad` (main). Los compromisos se
+ * filtran con la regla de main: el comercial solo ve los suyos.
  */
 export async function cargarFicha(
   service: SupabaseClient,
   id: string,
   rol: Rol,
+  userId: string,
 ): Promise<FichaProspecto | null> {
-  const [prospectoRes, actividadRes, compromisosRes, observacionesRes, cotizacionesRes, productosRes, interesRes] =
+  const [prospectoRes, compromisosRes, observacionesRes, cotizacionesRes, productosRes, interesRes] =
     await Promise.all([
       service
         .from("prospectos")
-        .select(
-          `${PROSPECTO_SELECT_LIST}, inactivo_en, motivo_inactivo,
-           creador:profiles!prospectos_creado_por_fkey ( nombre )`,
-        )
+        .select(PROSPECTO_SELECT_LIST)
         .eq("id", id)
         .maybeSingle(),
       service
-        .from("prospecto_actividad")
-        .select("id, fecha, tipo, texto, usuario:profiles!prospecto_actividad_usuario_id_fkey ( nombre )")
-        .eq("prospecto_id", id)
-        .order("creado_en", { ascending: false })
-        .limit(200),
-      service
         .from("compromisos")
-        .select(COMPROMISO_SELECT)
+        .select(COMPROMISO_AGENDA_SELECT)
         .eq("prospecto_id", id)
         .order("hecho", { ascending: true })
         .order("fecha", { ascending: true })
@@ -73,7 +70,6 @@ export async function cargarFicha(
   if (
     prospectoRes.error ||
     !prospectoRes.data ||
-    actividadRes.error ||
     compromisosRes.error ||
     observacionesRes.error ||
     cotizacionesRes.error ||
@@ -86,24 +82,25 @@ export async function cargarFicha(
   const fila = prospectoRes.data as unknown as FilaProspecto;
   const interesados = new Set((interesRes.data ?? []).map((r) => r.producto_id as string));
 
-  const actividad: ActividadItem[] = (actividadRes.data ?? []).map((a) => ({
-    id: a.id as string,
-    fecha: a.fecha as string,
-    tipo: a.tipo as string,
-    texto: (a.texto as string) ?? "",
-    usuario_nombre:
-      (a.usuario as unknown as { nombre: string } | null)?.nombre || "—",
-  }));
+  const actividad: ActividadItem[] = parseActividad(fila.actividad)
+    .map((a, i) => ({
+      id: `${fila.id}-${i}`,
+      fecha: a.f,
+      tipo: a.t,
+      texto: a.x,
+      usuario_nombre: a.u || "—",
+    }))
+    .reverse();
 
   return {
     prospecto: mapProspectoRow(fila),
     inactivo_en: fila.inactivo_en,
     motivo_inactivo: fila.motivo_inactivo ?? "",
-    creado_por_nombre: fila.creador?.nombre || "—",
+    creado_por_nombre: fila.creado?.nombre || "—",
     actividad,
     compromisos: (compromisosRes.data ?? [])
-      .map((c) => mapCompromisoRow(c as unknown as FilaCompromiso))
-      .filter((c) => puedeVerCompromiso(rol, c)),
+      .map((c) => mapCompromisoAgenda(c as unknown as CompromisoAgendaRow))
+      .filter((c) => puedeVerCompromiso(rol, userId, c.responsable_id)),
     observaciones: (observacionesRes.data ?? []).map((o) =>
       mapObservacionRow(o as unknown as FilaObservacion),
     ),

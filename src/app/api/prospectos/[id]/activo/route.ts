@@ -108,7 +108,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     await registrarBitacora(service, auth, "Prospecto reactivado", actual.empresa as string, ref);
   }
 
-  const ficha = await cargarFicha(service, id, auth.profile.rol);
+  const ficha = await cargarFicha(service, id, auth.profile.rol, auth.userId);
   if (!ficha) return NextResponse.json({ error: DENIED }, { status: 500 });
   return NextResponse.json({ ok: true, ficha });
 }
