@@ -13,7 +13,7 @@ import {
 import type { Rol } from "@/config/roles";
 import type { AuthContext } from "@/lib/auth";
 import { calcularTotales } from "@/lib/cotizaciones-calculo";
-import { can } from "@/lib/can";
+import { todayBogota } from "@/lib/format";
 import { formatCOP, precioParaTipo } from "@/lib/precios";
 import {
   PRODUCTO_SELECT,
@@ -30,6 +30,7 @@ import type {
   ProspectoCotizable,
 } from "@/lib/types/cotizacion";
 import type { ProductoListItem, TipoClientePrecio } from "@/lib/types/producto";
+import { filtroResponsablesOcultos, idsProspectosOcultos } from "@/lib/visibilidad";
 
 export const COTIZACION_SELECT = `
   id, numero, version, prospecto_id, cliente_nombre, tipo_cliente_codigo, fecha,
@@ -161,7 +162,7 @@ function idsDePerfiles(rows: CotizacionRow[]): string[] {
  */
 export async function cargarCotizaciones(
   service: SupabaseClient,
-  opciones: { estados?: readonly string[] } = {},
+  opciones: { rol: Rol; estados?: readonly string[] },
 ): Promise<CotizacionListItem[] | null> {
   let query = service
     .from("cotizaciones")
@@ -171,7 +172,11 @@ export async function cargarCotizaciones(
   if (opciones.estados?.length) query = query.in("estado", [...opciones.estados]);
   const { data, error } = await query;
   if (error) return null;
-  const rows = (data ?? []) as unknown as CotizacionRow[];
+  // El comercial no ve las cotizaciones de prospectos del supervisor.
+  const ocultos = await idsProspectosOcultos(service, opciones.rol);
+  const rows = ((data ?? []) as unknown as CotizacionRow[]).filter(
+    (r) => !r.prospecto_id || !ocultos.has(r.prospecto_id),
+  );
   const nombres = await nombresDePerfiles(service, idsDePerfiles(rows));
   return rows.map((r) => mapCotizacionRow(r, nombres));
 }
@@ -208,6 +213,7 @@ const TIPO_CLIENTE_FALLBACK = "tienda";
 export async function cargarProspectosCotizables(
   service: SupabaseClient,
   soloId?: string,
+  rol?: Rol,
 ): Promise<ProspectoCotizable[] | null> {
   let query = service
     .from("prospectos")
@@ -218,6 +224,9 @@ export async function cargarProspectosCotizables(
     .order("empresa", { ascending: true })
     .limit(1_000);
   if (soloId) query = query.eq("id", soloId);
+  // Con `rol` (listado del panel) el comercial no recibe los prospectos del supervisor.
+  const ocultos = rol ? await filtroResponsablesOcultos(rol) : null;
+  if (ocultos) query = query.not("responsable_id", "in", ocultos);
   const { data, error } = await query;
   if (error) return null;
   return ((data ?? []) as unknown as ProspectoCotizableRow[]).map((p) => ({
@@ -262,17 +271,17 @@ export async function cargarContactoCliente(
 // ---------------------------------------------------------------------------
 
 /**
- * canEditQ del as-is: `editar`, o responsable del prospecto, o (si el prospecto ya no
- * existe) quien creó la cotización.
+ * Solo el responsable del prospecto edita sus cotizaciones (o, si el prospecto ya no
+ * existe, quien la creó). Cambia respecto al as-is (canEditQ), donde el comercial `editar`
+ * tocaba todas: las de otros se pueden ver, no editar.
  */
 export function puedeEditarCotizacion(
-  rol: Rol,
+  _rol: Rol,
   userId: string,
   cot: Pick<CotizacionListItem, "creado_por">,
   responsableProspecto: string | null,
   prospectoExiste: boolean,
 ): boolean {
-  if (can(rol, "editar")) return true;
   if (prospectoExiste) return responsableProspecto === userId;
   return cot.creado_por === userId;
 }
@@ -284,8 +293,7 @@ export function puedeEditarCotizacion(
 export const cotizacionGuardarSchema = z.object({
   modo: z.enum(["borrador", "final"]),
   prospecto_id: z.string().uuid(),
-  tipo_cliente_codigo: z.string().trim().min(1).max(40),
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // El tipo de cliente sale del prospecto y la fecha es la del registro: el servidor los fija.
   validez_dias: z.coerce.number().int().min(1).max(365),
   pago: z.enum(PAGOS),
   entrega: z
@@ -377,7 +385,7 @@ export function prepararGuardado(args: {
     prospecto_id: prospecto.id,
     cliente_nombre: prospecto.empresa,
     tipo_cliente_codigo: tipo.codigo,
-    fecha: body.fecha,
+    fecha: existente?.fecha ?? todayBogota(),
     validez_dias: body.validez_dias,
     pago: body.pago,
     entrega: body.entrega,
@@ -401,7 +409,13 @@ export function prepararGuardado(args: {
     };
   }
 
-  if (body.desc_pct > DESC_MAX && !esSupervisor) {
+  // Un descuento ya aprobado por el supervisor no se vuelve a pedir si no cambia.
+  const yaAprobado =
+    body.desc_pct > DESC_MAX &&
+    !!existente?.aprobacion &&
+    existente.aprobacion.desc === body.desc_pct;
+
+  if (body.desc_pct > DESC_MAX && !esSupervisor && !yaAprobado) {
     return {
       ok: true,
       estado: "pendiente",
@@ -428,7 +442,7 @@ export function prepararGuardado(args: {
         comentario: existente.aprobacion.comentario,
       }
     : null;
-  if (body.desc_pct > DESC_MAX) {
+  if (body.desc_pct > DESC_MAX && !yaAprobado) {
     aprobacion = {
       por: auth.userId,
       en: ahoraISO,
@@ -460,6 +474,7 @@ export function prepararGuardado(args: {
 export function esEditable(estado: EstadoCotizacion): boolean {
   return ESTADOS_EDITABLES.includes(estado);
 }
+
 
 export async function cargarProductosPorId(
   service: SupabaseClient,

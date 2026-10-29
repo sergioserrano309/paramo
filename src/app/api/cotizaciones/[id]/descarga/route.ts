@@ -9,6 +9,7 @@ import { clientKey } from "@/lib/http";
 import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
+import { idsProspectosOcultos } from "@/lib/visibilidad";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -39,6 +40,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   const service = createServiceClient();
   const cot = await cargarCotizacion(service, id);
   if (!cot) {
+    return NextResponse.json({ error: "No encontrada." }, { status: 404 });
+  }
+
+  if (cot.prospecto_id && (await idsProspectosOcultos(service, auth.profile.rol)).has(cot.prospecto_id)) {
     return NextResponse.json({ error: "No encontrada." }, { status: 404 });
   }
 

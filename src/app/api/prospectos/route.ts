@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isRol } from "@/config/roles";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
+import { can } from "@/lib/can";
 import {
   isAuthContext,
   requireApiAnyPermission,
@@ -16,6 +17,7 @@ import {
   type ProspectoRow,
 } from "@/lib/prospectos";
 import { createServiceClient } from "@/lib/supabase-server";
+import { filtroResponsablesOcultos } from "@/lib/visibilidad";
 
 const MAX_BODY_BYTES = 16_384;
 const LIST_LIMIT = 500;
@@ -92,12 +94,15 @@ export async function GET() {
   }
 
   const service = createServiceClient();
-  const { data, error } = await service
+  const ocultos = await filtroResponsablesOcultos(auth.profile.rol);
+  let query = service
     .from("prospectos")
     .select(PROSPECTO_SELECT_LIST)
     .order("calificacion", { ascending: false })
     .order("creado_en", { ascending: false })
     .limit(LIST_LIMIT);
+  if (ocultos) query = query.not("responsable_id", "in", ocultos);
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: LIST_DENIED }, { status: 500 });
@@ -142,6 +147,10 @@ export async function POST(request: Request) {
 
   const body = parsed.data;
   const responsableId = body.responsable_id ?? auth.userId;
+  // Asignar un prospecto a otra persona es del supervisor.
+  if (responsableId !== auth.userId && !can(auth.profile.rol, "asignar")) {
+    return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
+  }
   const service = createServiceClient();
 
   const { data: responsable, error: respError } = await service

@@ -16,6 +16,7 @@ import {
 } from "@/config/compromisos";
 import { ROL_LABEL, type Rol } from "@/config/roles";
 import { can, canAsignarResponsable, canCreateCompromiso } from "@/lib/can";
+import { InputMoneda } from "@/components/InputMoneda";
 import { cn } from "@/lib/cn";
 import {
   addDaysYmd,
@@ -130,7 +131,7 @@ export function ProspectoDetalleDrawer({
   const router = useRouter();
   const ci = etapaIndex.get(p.etapa_codigo) ?? 0;
   const canEdit = canMove;
-  const canAssign = canAsignarResponsable(userRol, userId, p.responsable_id);
+  const canAssign = canAsignarResponsable(userRol);
   const puedeObservar = can(userRol, "observar");
   const puedeResponder = can(userRol, "editar");
   const puedeAgendar = canCreateCompromiso(userRol) && p.activo;
@@ -1047,12 +1048,10 @@ export function ProspectoDetalleDrawer({
               </select>
             </Field>
             <Field label="Venta mensual estimada (COP)">
-              <input
-                type="number"
-                min={0}
+              <InputMoneda
                 disabled={!canEdit || busy}
                 value={form.valor}
-                onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))}
+                onValueChange={(v) => setForm((f) => ({ ...f, valor: v }))}
                 className={fieldClass}
               />
             </Field>

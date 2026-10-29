@@ -7,6 +7,7 @@ import {
   DESC_TOPE,
   ESTADOS_EDITABLES,
   ESTADOS_FINALES,
+  estaBloqueada,
   IVA_DEFAULT,
   PAGOS,
   PAGO_DEFAULT,
@@ -35,7 +36,6 @@ type Props = {
   abrirInicial: string;
   nuevaInicial: boolean;
   prospectoInicial: string;
-  puedeEditarTodo: boolean;
   puedeAprobar: boolean;
   esSupervisor: boolean;
 };
@@ -115,7 +115,6 @@ export function CotizacionesPanel({
   abrirInicial,
   nuevaInicial,
   prospectoInicial,
-  puedeEditarTodo,
   puedeAprobar,
   esSupervisor,
 }: Props) {
@@ -163,17 +162,14 @@ export function CotizacionesPanel({
       : null;
   const esNueva = abierta === "nueva";
 
-  /** As-is canEditQ: `editar`, o responsable del prospecto, o creador si no hay prospecto. */
+  /** Responsable del prospecto, o el creador si el prospecto ya no existe (las de otros solo se ven). */
   function puedeEditar(c: CotizacionListItem): boolean {
-    if (puedeEditarTodo) return true;
     const p = c.prospecto_id ? prospectoPorId.get(c.prospecto_id) : undefined;
     return p ? p.responsable_id === userId : c.creado_por === userId;
   }
 
-  /** As-is canCreateQ. */
-  const puedeCrear =
-    puedeEditarTodo ||
-    prospectos.some((p) => p.activo && p.responsable_id === userId);
+  /** Se cotiza solo a prospectos propios. */
+  const puedeCrear = prospectos.some((p) => p.activo && p.responsable_id === userId);
 
   // Llegada con `?abrir=ID` o `?nueva=1&prospecto=ID` (ficha del prospecto, bitácora…).
   useEffect(() => {
@@ -190,7 +186,14 @@ export function CotizacionesPanel({
   }, []);
 
   const editable =
-    esNueva || (actual ? puedeEditar(actual) && ESTADOS_EDITABLES.includes(actual.estado) : false);
+    esNueva ||
+    (actual
+      ? puedeEditar(actual) && ESTADOS_EDITABLES.includes(actual.estado) && !estaBloqueada(actual)
+      : false);
+  const bloqueada = actual ? estaBloqueada(actual) : false;
+  // Un descuento ya aprobado y sin cambios no se vuelve a pedir.
+  const necesitaAprobacion = (desc: number) =>
+    desc > DESC_MAX && !esSupervisor && !(actual?.aprobacion && actual.aprobacion.desc === desc);
   const puedeActuar = actual ? puedeEditar(actual) : false;
 
   function formVacio(prospecto: ProspectoCotizable | null): FormState {
@@ -324,8 +327,6 @@ export function CotizacionesPanel({
       const payload = {
         modo,
         prospecto_id: form.prospecto_id,
-        tipo_cliente_codigo: form.tipo_cliente_codigo,
-        fecha: form.fecha,
         validez_dias: Number(form.validez_dias) || VALIDEZ_DEFAULT_DIAS,
         pago: form.pago,
         entrega: form.entrega,
@@ -458,7 +459,7 @@ export function CotizacionesPanel({
       p.id === form.prospecto_id ||
       (p.activo &&
         p.etapa_codigo !== "perdido" &&
-        (puedeEditarTodo || p.responsable_id === userId)),
+        p.responsable_id === userId),
   );
   const productosLinea = productos.filter((p) => p.estado !== "descontinuado");
   const descNum = Number(form.desc_pct) || 0;
@@ -772,6 +773,12 @@ export function CotizacionesPanel({
                   {actual.aprobacion.comentario ? ` · ${actual.aprobacion.comentario}` : ""}
                 </p>
               ) : null}
+              {bloqueada ? (
+                <p className="rounded-[10px] border border-paramo-line bg-paramo-surface-2 p-3 text-sm text-paramo-fg">
+                  Cotización aprobada: ya no se puede editar. Si necesitas cambiarla, crea una nueva
+                  versión.
+                </p>
+              ) : null}
               {actual?.estado === "rechazada" && actual.rechazo ? (
                 <p className="rounded-[10px] border border-paramo-bad p-3 text-sm text-paramo-fg">
                   El Supervisor rechazó {actual.rechazo.solicitado}% de descuento el{" "}
@@ -805,12 +812,12 @@ export function CotizacionesPanel({
                 </div>
                 <div className="space-y-1">
                   <label htmlFor="q-tipo" className={labelClass}>
-                    Tipo de cliente (define los precios)
+                    Tipo de cliente (define los precios, viene del prospecto)
                   </label>
                   <select
                     id="q-tipo"
                     value={form.tipo_cliente_codigo}
-                    onChange={(e) => setCampo("tipo_cliente_codigo", e.target.value)}
+                    disabled
                     className={fieldClass}
                   >
                     {tiposCliente.map((t) => (
@@ -828,7 +835,7 @@ export function CotizacionesPanel({
                     id="q-fecha"
                     type="date"
                     value={form.fecha}
-                    onChange={(e) => setCampo("fecha", e.target.value)}
+                    disabled
                     className={fieldClass}
                   />
                 </div>
@@ -1027,7 +1034,7 @@ export function CotizacionesPanel({
                       </select>
                     </div>
                   </div>
-                  {editable && descNum > DESC_MAX ? (
+                  {editable && descNum > DESC_MAX && (esSupervisor || necesitaAprobacion(descNum)) ? (
                     <p
                       className={`rounded-[10px] border p-3 text-sm ${
                         esSupervisor
@@ -1144,7 +1151,7 @@ export function CotizacionesPanel({
                           disabled={cargando}
                           className={btnPrimary}
                         >
-                          {descNum > DESC_MAX && !esSupervisor
+                          {necesitaAprobacion(descNum)
                             ? "Solicitar aprobación"
                             : "Generar versión final"}
                         </button>
@@ -1188,7 +1195,7 @@ export function CotizacionesPanel({
                     puedeActuar &&
                     (["enviada", "aceptada", "no_aceptada"] as EstadoCotizacion[]).includes(
                       actual.estado,
-                    ) ? (
+                    ) || bloqueada ? (
                       <button
                         type="button"
                         disabled={cargando}

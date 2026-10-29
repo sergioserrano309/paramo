@@ -22,27 +22,23 @@ export function canCreateProspecto(rol: Rol): boolean {
 }
 
 /**
- * Equivalente a canEditP del as-is: `editar` O soy el responsable.
- * El supervisor no tiene `editar`; solo mueve/edita si es responsable (caso raro).
- *
- * Pendiente validar con negocio: ¿el supervisor debería poder mover etapas
- * de toda la cartera (p. ej. con `asignar`), o se mantiene esta regla as-is?
+ * Cada usuario mueve y edita solo los prospectos que tiene asignados, comercial o
+ * supervisor. Cambia respecto al as-is (canEditP: `editar` O responsable), donde el
+ * comercial podía tocar toda la cartera; los demás prospectos se pueden ver, no tocar.
+ * Reasignar es aparte (`canAsignarResponsable`).
  */
 export function canEditProspecto(
   rol: Rol,
   userId: string,
   responsableId: string,
 ): boolean {
-  return can(rol, "editar") || responsableId === userId;
+  void rol;
+  return responsableId === userId;
 }
 
-/** As-is canAssign en la ficha: quien edita el prospecto, o el supervisor (`asignar`). */
-export function canAsignarResponsable(
-  rol: Rol,
-  userId: string,
-  responsableId: string,
-): boolean {
-  return canEditProspecto(rol, userId, responsableId) || can(rol, "asignar");
+/** Solo quien tiene `asignar` (supervisor) pasa un prospecto a otra persona. */
+export function canAsignarResponsable(rol: Rol): boolean {
+  return can(rol, "asignar");
 }
 
 /** Alta de compromiso: as-is `editar` o `asignar`. */
@@ -70,7 +66,10 @@ export type CompromisoAccess = {
   responsableRol: Rol | null;
 };
 
-/** As-is canToggleC: el supervisor solo marca lo suyo; el comercial, lo que no es de un supervisor. */
+/**
+ * El supervisor solo marca lo suyo. El comercial marca como hecho lo que ve (lo suyo),
+ * incluido lo que le asignó el supervisor: es como reporta el cumplimiento.
+ */
 export function canToggleCompromiso(
   rol: Rol,
   userId: string,
@@ -81,7 +80,11 @@ export function canToggleCompromiso(
   return c.responsableRol !== "supervisor";
 }
 
-/** As-is canEditC: el supervisor edita lo que creó o lo que tiene a su cargo. */
+/**
+ * El supervisor edita lo que creó o lo que tiene a su cargo. El comercial solo lo que él
+ * mismo creó: lo que le asigna el supervisor no se edita ni se borra (solo se marca
+ * hecho), para no perder el control y seguimiento de la tarea.
+ */
 export function canEditCompromiso(
   rol: Rol,
   userId: string,
@@ -91,5 +94,5 @@ export function canEditCompromiso(
   if (rol === "supervisor") {
     return c.creadoPor === userId || c.responsableId === userId;
   }
-  return c.responsableRol !== "supervisor";
+  return c.creadoPor === userId;
 }

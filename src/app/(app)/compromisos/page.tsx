@@ -8,6 +8,7 @@ import {
   type ProspectoRow,
 } from "@/lib/prospectos";
 import { createServiceClient } from "@/lib/supabase-server";
+import { filtroResponsablesOcultos } from "@/lib/visibilidad";
 import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type {
   CatalogoItem,
@@ -30,20 +31,24 @@ export default async function CompromisosPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const service = createServiceClient();
   const supervisor = ctx.profile.rol === "supervisor";
+  const ocultos = await filtroResponsablesOcultos(ctx.profile.rol);
+  let prospectosQ = service
+    .from("prospectos")
+    .select(PROSPECTO_SELECT_LIST)
+    .order("empresa", { ascending: true })
+    .limit(500);
+  if (ocultos) prospectosQ = prospectosQ.not("responsable_id", "in", ocultos);
 
   const [
     compromisos,
     prospectosRes,
     etapasRes,
     canalesRes,
-    fuentesRes,    profilesRes,
+    fuentesRes,
+    profilesRes,
   ] = await Promise.all([
     fetchCompromisosAgenda(service, supervisor ? null : ctx.userId),
-    service
-      .from("prospectos")
-      .select(PROSPECTO_SELECT_LIST)
-      .order("empresa", { ascending: true })
-      .limit(500),
+    prospectosQ,
     service
       .from("etapas_funnel")
       .select("codigo, nombre, orden, probabilidad, en_pipeline")

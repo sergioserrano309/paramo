@@ -163,7 +163,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const today = todayBogota();
 
   if (body.accion === "responsable") {
-    if (!canAsignarResponsable(rol, auth.userId, responsableId)) {
+    if (!canAsignarResponsable(rol)) {
       return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
     }
   } else if (!canEdit) {

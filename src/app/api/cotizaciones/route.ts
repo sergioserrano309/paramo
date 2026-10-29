@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
 import { registrarBitacora } from "@/lib/bitacora";
-import { can } from "@/lib/can";
 import {
   cargarCotizacion,
   cargarCotizaciones,
@@ -29,7 +28,7 @@ export async function GET() {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 503 });
   }
 
-  const cotizaciones = await cargarCotizaciones(createServiceClient());
+  const cotizaciones = await cargarCotizaciones(createServiceClient(), { rol: auth.profile.rol });
   if (!cotizaciones) {
     return NextResponse.json({ error: LIST_DENIED }, { status: 500 });
   }
@@ -74,7 +73,7 @@ export async function POST(request: Request) {
     ),
   ]);
   const prospecto = prospectos?.[0];
-  const tipo = tipos?.find((t) => t.codigo === datos.tipo_cliente_codigo);
+  const tipo = tipos?.find((t) => t.codigo === prospecto?.tipo_cliente_codigo);
   if (!prospecto || !tipos || !productos || !tipo) {
     return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
   }
@@ -83,10 +82,7 @@ export async function POST(request: Request) {
   if (!prospecto.activo || prospecto.etapa_codigo === "perdido") {
     return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
   }
-  if (
-    !can(auth.profile.rol, "editar") &&
-    prospecto.responsable_id !== auth.userId
-  ) {
+  if (prospecto.responsable_id !== auth.userId) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });
   }
 

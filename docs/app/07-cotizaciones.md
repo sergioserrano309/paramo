@@ -35,6 +35,10 @@ se corrige y vuelve a intentar) → `enviada` → `aceptada` / `no_aceptada`. De
   si lo genera el supervisor, queda autoaprobado.
 - Versión final exige tipo de caja (A/B/C) en cada línea y PVP en cada producto.
 - `version` sube al generar la versión final o al aprobar el descuento.
+- **Tipo de cliente y fecha no se editan**: el tipo sale del prospecto (su canal) y la fecha es
+  la del registro. Con el descuento **aprobado** la cotización queda bloqueada; se cambia
+  con «Crear nueva versión», y si el % no cambia no se pide aprobación otra vez. El comercial
+  solo edita cotizaciones de sus prospectos (ver 14-permisos-y-visibilidad).
 - Al **marcar enviada**, el prospecto avanza a «Propuesta enviada» si estaba antes en el
   pipeline (nunca retrocede). Al **aceptar**, pasa a «Ganado» (`ganado_en`, `activo`).
 - Los precios de las líneas salen de `precioParaTipo` (docs/app/06-productos.md): precio
