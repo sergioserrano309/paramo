@@ -10,7 +10,8 @@ import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { STALE_DAYS } from "@/config/funnel";
 import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
-import { canEditProspecto } from "@/lib/can";
+import { InputMoneda } from "@/components/InputMoneda";
+import { canAsignarResponsable, canEditProspecto } from "@/lib/can";
 import { cn } from "@/lib/cn";
 import {
   formatMoneyShort,
@@ -175,6 +176,12 @@ export function ProspectosPanel({
   function canEdit(p: ProspectoListItem) {
     return canEditProspecto(userRol, userId, p.responsable_id);
   }
+
+  // Solo el supervisor asigna a otra persona; el comercial crea prospectos para sí mismo.
+  const puedeAsignar = canAsignarResponsable(userRol);
+  const responsablesAsignables = puedeAsignar
+    ? catalogos.responsables
+    : catalogos.responsables.filter((r) => r.id === userId);
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -518,12 +525,13 @@ export function ProspectosPanel({
               <select
                 id="qp-resp"
                 value={quick.responsable_id}
+                disabled={!puedeAsignar}
                 onChange={(e) =>
                   setQuick((s) => ({ ...s, responsable_id: e.target.value }))
                 }
                 className={fieldClass}
               >
-                {catalogos.responsables.map((r) => (
+                {responsablesAsignables.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.nombre} · {ROL_LABEL[r.rol]}
                   </option>
@@ -1031,16 +1039,10 @@ export function ProspectosPanel({
                   <label htmlFor="dp-valor" className={labelClass}>
                     Venta mensual estimada (COP)
                   </label>
-                  <input
+                  <InputMoneda
                     id="dp-valor"
-                    type="number"
-                    min={0}
-                    step={10000}
-                    inputMode="numeric"
                     value={form.valor_mensual_estimado}
-                    onChange={(e) =>
-                      setField("valor_mensual_estimado", e.target.value)
-                    }
+                    onValueChange={(v) => setField("valor_mensual_estimado", v)}
                     className={fieldClass}
                   />
                 </div>
@@ -1086,10 +1088,11 @@ export function ProspectosPanel({
                   <select
                     id="dp-resp"
                     value={form.responsable_id}
+                    disabled={!puedeAsignar}
                     onChange={(e) => setField("responsable_id", e.target.value)}
                     className={fieldClass}
                   >
-                    {catalogos.responsables.map((r) => (
+                    {responsablesAsignables.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.nombre} · {ROL_LABEL[r.rol]}
                       </option>

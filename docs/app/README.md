@@ -21,6 +21,7 @@
 | [11-dashboard.md](./11-dashboard.md) | Dashboard: KPI, agenda, funnel, ventas y alertas |
 | [12-ficha-prospecto.md](./12-ficha-prospecto.md) | Panel del prospecto: cotizaciones, productos de interés, retroalimentación |
 | [13-shell.md](./13-shell.md) | Menú móvil, contadores, tema y atajos de teclado |
+| [14-permisos-y-visibilidad.md](./14-permisos-y-visibilidad.md) | Quién ve y quién edita: prospectos, cotizaciones, compromisos |
 
 ## Módulos (rutas)
 
@@ -47,7 +48,7 @@ Auth: `/login`. APIs: `POST /api/auth/login`, `POST /api/auth/logout`,
 `PATCH/DELETE /api/compromisos/[id]`, `POST /api/compromisos/[id]/hecho`,
 `GET/POST /api/productos`, `PATCH/DELETE /api/productos/[id]`,
 `POST /api/productos/[id]/precios`, `GET /api/productos/[id]/ventas`,
-`GET /api/productos/[id]/seguimiento`, `POST /api/productos/[id]/feedback`,
+`GET /api/productos/[id]/seguimiento`, `POST /api/prospectos/[id]/feedback`,
 `GET/POST /api/cotizaciones`, `PATCH/DELETE /api/cotizaciones/[id]`,
 `POST /api/cotizaciones/[id]/estado`, `POST /api/cotizaciones/[id]/descarga`,
 `GET /api/ventas/resumen`, `POST /api/ventas/cargar`, `DELETE /api/ventas/meses/[mes]`,

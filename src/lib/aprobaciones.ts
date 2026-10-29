@@ -54,7 +54,7 @@ export async function cargarAprobaciones(
 
   if (rol === "supervisor") {
     const [cotizaciones, productos] = await Promise.all([
-      cargarCotizaciones(service, { estados: ["pendiente"] }),
+      cargarCotizaciones(service, { rol, estados: ["pendiente"] }),
       cargarProductos(service),
     ]);
     return {
@@ -83,7 +83,7 @@ export async function cargarAprobaciones(
     };
   }
 
-  const cotizaciones = await cargarCotizaciones(service, { estados: ["rechazada", "final"] });
+  const cotizaciones = await cargarCotizaciones(service, { rol, estados: ["rechazada", "final"] });
   const semana = sumarDias(todayBogota(), -7);
   return {
     ...vacio,

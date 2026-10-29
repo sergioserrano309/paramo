@@ -32,9 +32,10 @@
 ### Reglas (as-is `visC`, `canToggleC`, `canEditC`)
 
 - El supervisor ve todo; el comercial no ve los compromisos cuyo responsable es un supervisor.
-- Marcar hecho: el supervisor solo los suyos; el comercial cualquiera que no sea de un
-  supervisor.
-- Editar / eliminar: el supervisor los que creó o le tocan; el comercial igual que marcar.
+- Marcar hecho: el supervisor solo los suyos; el comercial lo que ve (lo suyo), también lo
+  que le asignó el supervisor.
+- Editar / eliminar: el supervisor los que creó o le tocan; el comercial **solo los que él
+  creó** (lo asignado por el supervisor no se edita; ver 14-permisos-y-visibilidad).
 - Al crear, el comercial queda como responsable; el supervisor elige (por defecto, el
   primer vendedor). Si el supervisor asigna a otra persona queda marcada «Asignada por
   supervisor». Al editar, el comercial no puede reasignar.
@@ -75,7 +76,7 @@
 - `supabase/migrations/20261022193000_crear_compromisos.sql`
 - `src/app/(app)/compromisos/page.tsx`, `src/components/CompromisosPanel.tsx`
 - `src/app/api/compromisos/` (`route.ts`, `[id]/route.ts`, `[id]/hecho`)
-- `src/lib/compromisos.ts`, `src/lib/compromisos-permisos.ts`, `src/lib/fechas.ts`
+- `src/lib/compromisos.ts`, `src/lib/fechas.ts`
 - `src/config/compromisos.ts`, `src/lib/types/compromiso.ts`
 
 ## Fuera de alcance (siguientes hitos)

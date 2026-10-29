@@ -12,6 +12,7 @@ import {
   type ProspectoRow,
 } from "@/lib/prospectos";
 import { createServiceClient } from "@/lib/supabase-server";
+import { filtroResponsablesOcultos } from "@/lib/visibilidad";
 import type {
   CatalogoItem,
   EtapaCatalogo,
@@ -24,20 +25,24 @@ export const dynamic = "force-dynamic";
 export default async function FunnelPage() {
   const ctx = await requireModuleAccess("funnel");
   const service = createServiceClient();
+  const ocultos = await filtroResponsablesOcultos(ctx.profile.rol);
+  let prospectosQ = service
+    .from("prospectos")
+    .select(PROSPECTO_SELECT_LIST)
+    .eq("activo", true)
+    .order("calificacion", { ascending: false })
+    .order("valor_mensual_estimado", { ascending: false })
+    .limit(500);
+  if (ocultos) prospectosQ = prospectosQ.not("responsable_id", "in", ocultos);
 
   const [
     prospectosRes,
     canalesRes,
-    fuentesRes,    etapasRes,
+    fuentesRes,
+    etapasRes,
     profilesRes,
   ] = await Promise.all([
-    service
-      .from("prospectos")
-      .select(PROSPECTO_SELECT_LIST)
-      .eq("activo", true)
-      .order("calificacion", { ascending: false })
-      .order("valor_mensual_estimado", { ascending: false })
-      .limit(500),
+    prospectosQ,
     service
       .from("canales")
       .select("codigo, nombre, orden")

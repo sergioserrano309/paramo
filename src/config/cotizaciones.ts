@@ -48,6 +48,14 @@ export const ESTADOS_FINALES: readonly EstadoCotizacion[] = [
   "no_aceptada",
 ];
 
+/**
+ * Con el descuento aprobado, la cotización queda cerrada: no se edita nada. Para cambiarla
+ * se crea una nueva versión (vuelve a borrador).
+ */
+export function estaBloqueada(c: { estado: string; aprobacion: unknown | null }): boolean {
+  return c.estado === "final" && c.aprobacion !== null;
+}
+
 /** Estados en que se pueden editar los campos (as-is qEditable). */
 export const ESTADOS_EDITABLES: readonly EstadoCotizacion[] = [
   "borrador",

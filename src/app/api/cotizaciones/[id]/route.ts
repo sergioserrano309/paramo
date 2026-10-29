@@ -1,8 +1,8 @@
+import { estaBloqueada } from "@/config/cotizaciones";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
 import { registrarBitacora } from "@/lib/bitacora";
-import { can } from "@/lib/can";
 import {
   cargarCotizacion,
   cargarProductosPorId,
@@ -87,12 +87,12 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   // As-is qEditable: enviada / aceptada / no_aceptada solo admiten «nueva versión».
-  if (!esEditable(existente.estado)) {
+  if (!esEditable(existente.estado) || estaBloqueada(existente)) {
     return NextResponse.json({ error: SAVE_DENIED }, { status: 409 });
   }
 
   const prospecto = prospectoNuevo?.[0];
-  const tipo = tipos?.find((t) => t.codigo === datos.tipo_cliente_codigo);
+  const tipo = tipos?.find((t) => t.codigo === prospecto?.tipo_cliente_codigo);
   if (!prospecto || !tipos || !productos || !tipo) {
     return NextResponse.json({ error: SAVE_DENIED }, { status: 422 });
   }
@@ -105,7 +105,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
   if (
     prospecto.id !== existente.prospecto_id &&
-    !can(auth.profile.rol, "editar") &&
     prospecto.responsable_id !== auth.userId
   ) {
     return NextResponse.json(AUTH_UNAUTHORIZED_BODY, { status: 403 });

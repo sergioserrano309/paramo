@@ -16,7 +16,8 @@ import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { ETAPA_COL_COLOR, STALE_DAYS } from "@/config/funnel";
 import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
-import { canEditProspecto } from "@/lib/can";
+import { InputMoneda } from "@/components/InputMoneda";
+import { canAsignarResponsable, canEditProspecto } from "@/lib/can";
 import { cn } from "@/lib/cn";
 import {
   daysBetween,
@@ -101,6 +102,12 @@ export function FunnelPanel({
   function canEdit(p: ProspectoListItem) {
     return canEditProspecto(userRol, userId, p.responsable_id);
   }
+
+  // Solo el supervisor asigna a otra persona; el comercial crea prospectos para sí mismo.
+  const puedeAsignar = canAsignarResponsable(userRol);
+  const responsablesAsignables = puedeAsignar
+    ? catalogos.responsables
+    : catalogos.responsables.filter((r) => r.id === userId);
   const router = useRouter();
   const createTitleId = useId();
   const detailTitleId = useId();
@@ -848,16 +855,10 @@ export function FunnelPanel({
                   <label htmlFor="fn-valor" className={labelClass}>
                     Venta mensual estimada (COP)
                   </label>
-                  <input
+                  <InputMoneda
                     id="fn-valor"
-                    type="number"
-                    min={0}
-                    step={10000}
-                    inputMode="numeric"
                     value={form.valor_mensual_estimado}
-                    onChange={(e) =>
-                      setField("valor_mensual_estimado", e.target.value)
-                    }
+                    onValueChange={(v) => setField("valor_mensual_estimado", v)}
                     className={fieldClass}
                   />
                 </div>
@@ -903,10 +904,11 @@ export function FunnelPanel({
                   <select
                     id="fn-resp"
                     value={form.responsable_id}
+                    disabled={!puedeAsignar}
                     onChange={(e) => setField("responsable_id", e.target.value)}
                     className={fieldClass}
                   >
-                    {catalogos.responsables.map((r) => (
+                    {responsablesAsignables.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.nombre} · {ROL_LABEL[r.rol]}
                         {r.id === userId ? " (yo)" : ""}

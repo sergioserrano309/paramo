@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Rol } from "@/config/roles";
+import { idsProspectosOcultos } from "@/lib/visibilidad";
 
 export type ResumenSeguimiento = { interesados: number; opiniones: number; promedio: number };
 
@@ -55,6 +57,7 @@ export async function resumenSeguimientoProductos(
 
 type FilaOpinion = {
   id: string;
+  prospecto_id: string | null;
   fecha: string;
   tipo: string;
   cliente: string;
@@ -66,8 +69,9 @@ type FilaOpinion = {
 export async function cargarSeguimientoProducto(
   service: SupabaseClient,
   id: string,
+  rol: Rol,
 ): Promise<{ interesados: InteresadoProducto[]; opiniones: OpinionProducto[] } | null> {
-  const [interes, opiniones] = await Promise.all([
+  const [interes, opiniones, ocultos] = await Promise.all([
     service
       .from("prospecto_productos")
       .select(
@@ -78,12 +82,14 @@ export async function cargarSeguimientoProducto(
     service
       .from("producto_feedback")
       .select(
-        "id, fecha, tipo, cliente, calif, texto, usuario:profiles!producto_feedback_usuario_id_fkey ( nombre )",
+        "id, prospecto_id, fecha, tipo, cliente, calif, texto, usuario:profiles!producto_feedback_usuario_id_fkey ( nombre )",
       )
       .eq("producto_id", id)
       .order("fecha", { ascending: false })
       .order("creado_en", { ascending: false })
       .limit(200),
+    // El comercial no ve prospectos del supervisor, ni sus opiniones.
+    idsProspectosOcultos(service, rol),
   ]);
   if (interes.error || opiniones.error) return null;
 
@@ -93,13 +99,15 @@ export async function cargarSeguimientoProducto(
       prospecto: { id: string; empresa: string; activo: boolean; etapas_funnel: { nombre: string } | null } | null;
     }).prospecto;
     // Como el as-is `interested()`: se cuentan los prospectos que siguen existiendo.
-    if (p) interesados.push({ id: p.id, empresa: p.empresa, etapa: p.etapas_funnel?.nombre ?? "" });
+    if (p && !ocultos.has(p.id)) interesados.push({ id: p.id, empresa: p.empresa, etapa: p.etapas_funnel?.nombre ?? "" });
   }
   interesados.sort((a, b) => a.empresa.localeCompare(b.empresa, "es"));
 
   return {
     interesados,
-    opiniones: ((opiniones.data ?? []) as unknown as FilaOpinion[]).map((o) => ({
+    opiniones: ((opiniones.data ?? []) as unknown as FilaOpinion[])
+      .filter((o) => !o.prospecto_id || !ocultos.has(o.prospecto_id))
+      .map((o) => ({
       id: o.id,
       fecha: o.fecha,
       tipo: o.tipo,

@@ -12,6 +12,7 @@ import type { ProductoListItem } from "@/lib/types/producto";
 import type { VentaMes, VentaResumenFila } from "@/lib/types/venta";
 import { cargarMesesVentas, resumenVentas } from "@/lib/ventas";
 import { rangoDePeriodo } from "@/lib/ventas-periodo";
+import { filtroResponsablesOcultos } from "@/lib/visibilidad";
 
 export type EtapaDashboard = {
   codigo: string;
@@ -73,13 +74,17 @@ export async function cargarDashboard(
   userId: string,
 ): Promise<DatosDashboard | null> {
   const hoy = todayBogota();
+  // El comercial no cuenta ni ve los prospectos del supervisor.
+  const ocultos = await filtroResponsablesOcultos(rol);
+  let prospectosQ = service
+    .from("prospectos")
+    .select("id, empresa, etapa_codigo, activo, valor_mensual_estimado, ultimo_contacto, creado_en")
+    .limit(2_000);
+  if (ocultos) prospectosQ = prospectosQ.not("responsable_id", "in", ocultos);
 
   const [prospectosRes, etapasRes, compromisos, meses, productos, observaciones] =
     await Promise.all([
-      service
-        .from("prospectos")
-        .select("id, empresa, etapa_codigo, activo, valor_mensual_estimado, ultimo_contacto, creado_en")
-        .limit(2_000),
+      prospectosQ,
       service
         .from("etapas_funnel")
         .select("codigo, nombre, orden, probabilidad, en_pipeline")

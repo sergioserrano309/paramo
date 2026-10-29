@@ -5,6 +5,7 @@ import { hasSupabaseServiceConfig } from "@/lib/env";
 import { can, isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
+import { puedeVerProspecto } from "@/lib/visibilidad";
 
 const MAX_BODY_BYTES = 8_192;
 const DENIED = "No se pudo guardar la observación.";
@@ -77,6 +78,16 @@ export async function GET(
   }
 
   const service = createServiceClient();
+  if (auth.profile.rol === "comercial") {
+    const { data: prospecto } = await service
+      .from("prospectos")
+      .select("responsable_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (!prospecto || !(await puedeVerProspecto(auth.profile.rol, prospecto.responsable_id as string))) {
+      return NextResponse.json({ error: DENIED }, { status: 404 });
+    }
+  }
   const { data, error } = await service
     .from("observaciones")
     .select(SELECT)

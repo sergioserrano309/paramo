@@ -1,3 +1,4 @@
+import { estaBloqueada } from "@/config/cotizaciones";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
@@ -242,7 +243,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     };
   } else if (
     accion === "nueva_version" &&
-    ["enviada", "aceptada", "no_aceptada"].includes(cot.estado)
+    (["enviada", "aceptada", "no_aceptada"].includes(cot.estado) || estaBloqueada(cot))
   ) {
     t = {
       patch: { estado: "borrador" },

@@ -7,6 +7,7 @@ import { clientKey } from "@/lib/http";
 import { cargarFeedbackProspecto } from "@/lib/productos-seguimiento";
 import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
+import { puedeVerProspecto } from "@/lib/visibilidad";
 import { createServiceClient } from "@/lib/supabase-server";
 
 const DENIED = "No se pudo cargar lo relacionado del prospecto.";
@@ -40,7 +41,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     cargarFicha(service, id, auth.profile.rol, auth.userId),
     cargarFeedbackProspecto(service, id),
   ]);
-  if (!ficha) {
+  if (!ficha || !(await puedeVerProspecto(auth.profile.rol, ficha.prospecto.responsable_id))) {
     return NextResponse.json({ error: DENIED }, { status: 404 });
   }
   return NextResponse.json({

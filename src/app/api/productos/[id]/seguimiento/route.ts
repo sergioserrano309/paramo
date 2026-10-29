@@ -30,7 +30,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: DENIED }, { status: 429 });
   }
 
-  const data = await cargarSeguimientoProducto(createServiceClient(), id);
+  const data = await cargarSeguimientoProducto(createServiceClient(), id, auth.profile.rol);
   if (!data) {
     return NextResponse.json({ error: DENIED }, { status: 500 });
   }

@@ -10,6 +10,7 @@ import {
   nombreLinea,
 } from "@/config/productos";
 import Link from "next/link";
+import { InputMoneda } from "@/components/InputMoneda";
 import { formatMoneyShort } from "@/lib/format";
 import type {
   InteresadoProducto,
@@ -804,15 +805,11 @@ export function ProductosPanel({
                   <label htmlFor="pr-pvp" className={labelClass}>
                     PVP · precio venta público (COP) *
                   </label>
-                  <input
+                  <InputMoneda
                     id="pr-pvp"
-                    type="number"
-                    min={0}
-                    step={100}
-                    inputMode="numeric"
                     required
                     value={form.precio_publico}
-                    onChange={(e) => setCampo("precio_publico", e.target.value)}
+                    onValueChange={(v) => setCampo("precio_publico", v)}
                     className={fieldClass}
                   />
                 </div>
@@ -990,6 +987,16 @@ export function ProductosPanel({
                               </select>
                             </td>
                             <td className="w-32 px-3 py-2">
+                              {f.modo === "precio" ? (
+                                <InputMoneda
+                                  aria-label={`Valor para ${t.nombre}`}
+                                  disabled={!editable || cargando}
+                                  value={f.v}
+                                  placeholder="$"
+                                  onValueChange={(v) => setPrecio(t.codigo, { v })}
+                                  className={fieldClass}
+                                />
+                              ) : (
                               <input
                                 aria-label={`Valor para ${t.nombre}`}
                                 type="number"
@@ -1007,6 +1014,7 @@ export function ProductosPanel({
                                 }
                                 className={fieldClass}
                               />
+                              )}
                             </td>
                             <td
                               className={`px-3 py-2 text-right font-bold ${

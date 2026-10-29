@@ -21,8 +21,8 @@ export default async function CotizacionesPage({ searchParams }: PageProps) {
   const service = createServiceClient();
 
   const [cotizaciones, prospectos, productos, tipos] = await Promise.all([
-    cargarCotizaciones(service),
-    cargarProspectosCotizables(service),
+    cargarCotizaciones(service, { rol: ctx.profile.rol }),
+    cargarProspectosCotizables(service, undefined, ctx.profile.rol),
     cargarProductos(service),
     cargarTiposClientePrecio(service),
   ]);
@@ -46,8 +46,6 @@ export default async function CotizacionesPage({ searchParams }: PageProps) {
       abrirInicial={sp.abrir && UUID.test(sp.abrir) ? sp.abrir : ""}
       nuevaInicial={sp.nueva === "1"}
       prospectoInicial={sp.prospecto && UUID.test(sp.prospecto) ? sp.prospecto : ""}
-      // As-is `editar`: crea y edita cualquier cotización.
-      puedeEditarTodo={can(rol, "editar")}
       // As-is `asignar`: aprueba o rechaza descuentos mayores al máximo.
       puedeAprobar={can(rol, "asignar")}
       esSupervisor={rol === "supervisor"}
