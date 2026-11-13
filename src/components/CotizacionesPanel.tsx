@@ -15,10 +15,16 @@ import {
   estadoCotizacion,
   type EstadoCotizacion,
 } from "@/config/cotizaciones";
-import { calcularTotales } from "@/lib/cotizaciones-calculo";
+import { InputMoneda } from "@/components/InputMoneda";
+import { calcularTotales, lineasConPrecioCambiado } from "@/lib/cotizaciones-calculo";
 import { descargarCotizacionPdf } from "@/lib/cotizacion-pdf";
 import { formatMoneyShort, todayBogota } from "@/lib/format";
-import { formatCOP, precioParaTipo } from "@/lib/precios";
+import {
+  MONEDAS,
+  formatMoneda,
+  precioParaTipo,
+  type Moneda,
+} from "@/lib/precios";
 import type {
   ContactoCliente,
   CotizacionListItem,
@@ -40,12 +46,14 @@ type Props = {
   esSupervisor: boolean;
 };
 
-type LineaForm = { producto_id: string; caja: string; cant: string };
+/** `precio` es texto del campo (decimales con «.»); arranca en el precio de lista. */
+type LineaForm = { producto_id: string; caja: string; cant: string; precio: string };
 
 type FormState = {
   prospecto_id: string;
   tipo_cliente_codigo: string;
   fecha: string;
+  moneda: Moneda;
   validez_dias: string;
   pago: string;
   entrega: string;
@@ -129,6 +137,8 @@ export function CotizacionesPanel({
   const [aviso, setAviso] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [confirmaBorrar, setConfirmaBorrar] = useState(false);
+  // Ventana de confirmación cuando se cambió algún precio frente al catálogo.
+  const [confirmaPrecios, setConfirmaPrecios] = useState(false);
 
   useEffect(() => {
     setCotizaciones(initialCotizaciones);
@@ -192,8 +202,8 @@ export function CotizacionesPanel({
       : false);
   const bloqueada = actual ? estaBloqueada(actual) : false;
   // Un descuento ya aprobado y sin cambios no se vuelve a pedir.
-  const necesitaAprobacion = (desc: number) =>
-    desc > DESC_MAX && !esSupervisor && !(actual?.aprobacion && actual.aprobacion.desc === desc);
+  const descSinAprobar = (desc: number) =>
+    desc > DESC_MAX && !(actual?.aprobacion && actual.aprobacion.desc === desc);
   const puedeActuar = actual ? puedeEditar(actual) : false;
 
   function formVacio(prospecto: ProspectoCotizable | null): FormState {
@@ -201,14 +211,19 @@ export function CotizacionesPanel({
       prospecto_id: prospecto?.id ?? "",
       tipo_cliente_codigo: prospecto?.tipo_cliente_codigo ?? "tienda",
       fecha: todayBogota(),
+      moneda: "COP",
       validez_dias: String(VALIDEZ_DEFAULT_DIAS),
       pago: PAGO_DEFAULT,
       entrega: prospecto?.ciudad ?? "",
       notas: "",
       desc_pct: "0",
       iva_pct: String(IVA_DEFAULT),
-      items: [{ producto_id: "", caja: "", cant: "1" }],
+      items: [lineaVacia()],
     };
+  }
+
+  function lineaVacia(): LineaForm {
+    return { producto_id: "", caja: "", cant: "1", precio: "0" };
   }
 
   function formDesde(c: CotizacionListItem): FormState {
@@ -216,6 +231,7 @@ export function CotizacionesPanel({
       prospecto_id: c.prospecto_id ?? "",
       tipo_cliente_codigo: c.tipo_cliente_codigo ?? "tienda",
       fecha: c.fecha,
+      moneda: c.moneda,
       validez_dias: String(c.validez_dias),
       pago: c.pago,
       entrega: c.entrega,
@@ -223,12 +239,22 @@ export function CotizacionesPanel({
       desc_pct: String(c.desc_pct),
       iva_pct: String(c.iva_pct),
       items: c.items.length
-        ? c.items.map((i) => ({
-            producto_id: i.producto_id ?? "",
-            caja: i.caja,
-            cant: String(i.cant),
-          }))
-        : [{ producto_id: "", caja: "", cant: "1" }],
+        ? c.items.map((i) => {
+            // Si el precio seguía al catálogo al guardar, vuelve a seguirlo (el catálogo pudo
+            // cambiar): así no parece un cambio manual que exija aprobación.
+            const siguioCatalogo = i.precio_lista !== null && i.precio === i.precio_lista;
+            const prod = i.producto_id ? productoPorId.get(i.producto_id) : undefined;
+            const lista = prod
+              ? precioParaTipo(prod, tipoPorCodigo.get(c.tipo_cliente_codigo ?? ""), c.moneda)
+              : i.precio;
+            return {
+              producto_id: i.producto_id ?? "",
+              caja: i.caja,
+              cant: String(i.cant),
+              precio: String(siguioCatalogo ? lista : i.precio),
+            };
+          })
+        : [lineaVacia()],
     };
   }
 
@@ -250,6 +276,7 @@ export function CotizacionesPanel({
     setError(null);
     setAviso(null);
     setConfirmaBorrar(false);
+    setConfirmaPrecios(false);
     setForm(formDesde(c));
     setAp({ desc: String(c.desc_solicitado ?? c.desc_pct), comentario: "" });
     setAbierta(c.id);
@@ -261,11 +288,52 @@ export function CotizacionesPanel({
 
   function elegirProspecto(id: string) {
     const p = prospectoPorId.get(id);
+    setForm((prev) => {
+      const tipo = p?.tipo_cliente_codigo ?? prev.tipo_cliente_codigo;
+      return {
+        ...prev,
+        prospecto_id: id,
+        tipo_cliente_codigo: tipo,
+        entrega: p && !prev.entrega ? p.ciudad : prev.entrega,
+        // Otro cliente puede ser de otro tipo: los precios vuelven a los de lista.
+        items: prev.items.map((l) => ({
+          ...l,
+          precio: String(listaDe(l.producto_id, tipo, prev.moneda)),
+        })),
+      };
+    });
+  }
+
+  /** Precio de catálogo de un producto para un tipo de cliente y moneda (0 si no tiene). */
+  function listaDe(productoId: string, tipoCodigo: string, moneda: Moneda): number {
+    const prod = productoPorId.get(productoId);
+    return prod ? precioParaTipo(prod, tipoPorCodigo.get(tipoCodigo), moneda) : 0;
+  }
+
+  /** Cambiar la moneda descarta los precios escritos a mano: vuelven a los de lista. */
+  function elegirMoneda(moneda: Moneda) {
     setForm((prev) => ({
       ...prev,
-      prospecto_id: id,
-      tipo_cliente_codigo: p?.tipo_cliente_codigo ?? prev.tipo_cliente_codigo,
-      entrega: p && !prev.entrega ? p.ciudad : prev.entrega,
+      moneda,
+      items: prev.items.map((l) => ({
+        ...l,
+        precio: String(listaDe(l.producto_id, prev.tipo_cliente_codigo, moneda)),
+      })),
+    }));
+  }
+
+  function elegirProducto(i: number, productoId: string) {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((l, k) =>
+        k === i
+          ? {
+              ...l,
+              producto_id: productoId,
+              precio: String(listaDe(productoId, prev.tipo_cliente_codigo, prev.moneda)),
+            }
+          : l,
+      ),
     }));
   }
 
@@ -304,14 +372,33 @@ export function CotizacionesPanel({
   // Precios en vivo: mismo cálculo que hace el servidor al guardar.
   const tipoForm = tipoPorCodigo.get(form.tipo_cliente_codigo);
   const lineasCalculadas = form.items.map((l) => {
-    const prod = productoPorId.get(l.producto_id);
-    const precio = prod ? precioParaTipo(prod, tipoForm) : 0;
-    return { precio, cant: Number(l.cant) || 0 };
+    const lista = productoPorId.has(l.producto_id)
+      ? precioParaTipo(productoPorId.get(l.producto_id)!, tipoForm, form.moneda)
+      : 0;
+    return {
+      producto_id: l.producto_id || null,
+      precio: Number(l.precio) || 0,
+      precio_lista: lista,
+      cant: Number(l.cant) || 0,
+    };
   });
   const totales = calcularTotales(
     lineasCalculadas,
     Number(form.desc_pct) || 0,
     Number(form.iva_pct) || 0,
+    form.moneda,
+  );
+  const dinero = (n: number) => formatMoneda(n, form.moneda);
+  // Líneas con producto y cantidad: las que se cotizan de verdad.
+  const lineasActivas = lineasCalculadas.filter((l) => l.producto_id && l.cant > 0);
+  const lineasCambiadas = lineasConPrecioCambiado(lineasActivas);
+  const lineasSinPrecio = lineasActivas.filter((l) => !(l.precio > 0));
+  // Lo que ya aprobó el supervisor sobre esta cotización no se vuelve a pedir si no cambia.
+  const preciosSinAprobar = lineasCambiadas.filter(
+    (l) =>
+      !actual?.aprobacion?.precios.some(
+        (p) => p.producto_id === l.producto_id && p.precio === l.precio,
+      ),
   );
 
   async function guardar(modo: "borrador" | "final") {
@@ -328,6 +415,7 @@ export function CotizacionesPanel({
         modo,
         prospecto_id: form.prospecto_id,
         validez_dias: Number(form.validez_dias) || VALIDEZ_DEFAULT_DIAS,
+        moneda: form.moneda,
         pago: form.pago,
         entrega: form.entrega,
         notas: form.notas,
@@ -339,6 +427,8 @@ export function CotizacionesPanel({
             producto_id: l.producto_id,
             caja: l.caja,
             cant: Number(l.cant) || 0,
+            // Se envía el precio escrito; el servidor lo compara con el de catálogo.
+            precio: Number(l.precio) || 0,
           })),
       };
       const res = esNueva
@@ -355,6 +445,7 @@ export function CotizacionesPanel({
         comentario: "",
       });
       setAbierta(res.cotizacion.id);
+      setConfirmaPrecios(false);
       setAviso(
         res.cotizacion.estado === "pendiente"
           ? "Solicitud enviada al Supervisor."
@@ -438,6 +529,34 @@ export function CotizacionesPanel({
     }
   }
 
+  const requiereAprobacion =
+    !esSupervisor && (descSinAprobar(Number(form.desc_pct) || 0) || preciosSinAprobar.length > 0);
+
+  /** Con precios distintos al catálogo se pide confirmar antes de generar la versión final. */
+  function pedirFinal() {
+    if (lineasSinPrecio.length > 0) {
+      setError(`Hay productos con precio ${dinero(0)}. Define el precio antes de confirmar.`);
+      return;
+    }
+    if (lineasCambiadas.length > 0) {
+      setError(null);
+      setConfirmaPrecios(true);
+      return;
+    }
+    void guardar("final");
+  }
+
+  /** Total cotizado en el mes por moneda: COP y USD no se suman entre sí. */
+  function cotizadoMes(lista: CotizacionListItem[]): string {
+    const cop = lista.filter((c) => c.moneda === "COP").reduce((a, c) => a + c.total, 0);
+    const usd = lista.filter((c) => c.moneda === "USD").reduce((a, c) => a + c.total, 0);
+    const partes = [formatMoneyShort(cop)];
+    if (usd > 0) {
+      partes.push(`USD ${Math.round(usd).toLocaleString("es-CO")}`);
+    }
+    return partes.join(" · ");
+  }
+
   // ---- Listado y KPI (as-is vCotizaciones) ----
   const pendientes = cotizaciones.filter((c) => c.estado === "pendiente");
   const mesActual = todayBogota().slice(0, 7);
@@ -472,8 +591,8 @@ export function CotizacionesPanel({
             Cotizaciones
           </h1>
           <p className="text-sm text-paramo-muted">
-            Precios según tipo de cliente · descuentos de más del {DESC_MAX}% los aprueba
-            el Supervisor
+            Precios según tipo de cliente · descuentos de más del {DESC_MAX}% y cambios de
+            precio los aprueba el Supervisor
           </p>
         </header>
         {puedeCrear ? (
@@ -503,7 +622,7 @@ export function CotizacionesPanel({
               {pendientes.length === 1 ? "cotización espera" : "cotizaciones esperan"} tu
               aprobación
             </b>{" "}
-            por descuento mayor al {DESC_MAX}%.
+            por descuento mayor al {DESC_MAX}% o precios cambiados.
           </span>
           <button type="button" onClick={() => setFiltro("aprobar")} className={btnPrimary}>
             Revisar
@@ -514,7 +633,7 @@ export function CotizacionesPanel({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           etiqueta="Cotizado este mes"
-          valor={formatMoneyShort(delMes.reduce((a, c) => a + c.total, 0))}
+          valor={cotizadoMes(delMes)}
           pie={`${delMes.length} cotizaciones finales`}
         />
         <Kpi
@@ -528,9 +647,9 @@ export function CotizacionesPanel({
           pie={`${aceptadas.length} aceptadas de ${cerradas.length} cerradas`}
         />
         <Kpi
-          etiqueta="Descuentos por aprobar"
+          etiqueta="Por aprobar"
           valor={String(pendientes.length)}
-          pie={`superan el ${DESC_MAX}% y requieren al Supervisor`}
+          pie={`descuento mayor al ${DESC_MAX}% o precios cambiados`}
           alerta={pendientes.length > 0}
         />
       </div>
@@ -630,7 +749,7 @@ export function CotizacionesPanel({
                   </td>
                   <td className="px-3 py-3 text-right">{c.desc_pct ? `${c.desc_pct}%` : "—"}</td>
                   <td className="px-3 py-3 text-right font-bold text-paramo-fg">
-                    {formatCOP(c.total)}
+                    {formatMoneda(c.total, c.moneda)}
                   </td>
                   <td className="px-3 py-3 text-xs text-paramo-muted">{c.creado_por_nombre}</td>
                 </tr>
@@ -693,16 +812,49 @@ export function CotizacionesPanel({
                 puedeAprobar ? (
                   <section className="space-y-3 rounded-[10px] border border-paramo-warn p-3">
                     <h3 className="text-xs font-bold uppercase tracking-wide text-paramo-muted">
-                      Aprobación de descuento
+                      Aprobación de la solicitud
                     </h3>
                     <p className="text-sm text-paramo-fg">
                       {actual.creado_por_nombre} solicita{" "}
-                      <b>{actual.desc_solicitado ?? actual.desc_pct}%</b> de descuento
-                      (máximo sin aprobación: {DESC_MAX}%). Total con ese descuento:{" "}
-                      <b>{formatCOP(actual.total)}</b>.
+                      {(actual.desc_solicitado ?? actual.desc_pct) > DESC_MAX ? (
+                        <>
+                          <b>{actual.desc_solicitado ?? actual.desc_pct}%</b> de descuento
+                          (máximo sin aprobación: {DESC_MAX}%)
+                        </>
+                      ) : null}
+                      {(actual.desc_solicitado ?? actual.desc_pct) > DESC_MAX &&
+                      lineasConPrecioCambiado(actual.items).length > 0
+                        ? " y "
+                        : null}
+                      {lineasConPrecioCambiado(actual.items).length > 0 ? (
+                        <b>
+                          {lineasConPrecioCambiado(actual.items).length} precio(s) distintos al
+                          catálogo
+                        </b>
+                      ) : null}
+                      . Total con esas condiciones: <b>{formatMoneda(actual.total, actual.moneda)}</b>.
                     </p>
+                    {lineasConPrecioCambiado(actual.items).length > 0 ? (
+                      <ul className="space-y-1 rounded-lg bg-paramo-surface-2 p-3 text-sm">
+                        {lineasConPrecioCambiado(actual.items).map((l, k) => (
+                          <li key={k} className="flex flex-wrap justify-between gap-2">
+                            <span className="text-paramo-fg">{l.nombre}</span>
+                            <span className="text-paramo-muted">
+                              catálogo {formatMoneda(l.precio_lista ?? 0, actual.moneda)} →{" "}
+                              <b className="text-paramo-fg">
+                                {formatMoneda(l.precio, actual.moneda)}
+                              </b>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <div className="flex flex-wrap gap-3">
-                      <div className="w-44 space-y-1">
+                      <div
+                        className={`w-44 space-y-1 ${
+                          (actual.desc_solicitado ?? actual.desc_pct) > DESC_MAX ? "" : "hidden"
+                        }`}
+                      >
                         <label htmlFor="ap-desc" className={labelClass}>
                           Descuento aprobado (%)
                         </label>
@@ -737,7 +889,7 @@ export function CotizacionesPanel({
                       <button
                         type="button"
                         disabled={cargando}
-                        onClick={() => transicion("rechazar", "Descuento rechazado.")}
+                        onClick={() => transicion("rechazar", "Solicitud rechazada.")}
                         className={`${btnGhost} text-paramo-bad`}
                       >
                         Rechazar
@@ -746,7 +898,7 @@ export function CotizacionesPanel({
                         type="button"
                         disabled={cargando}
                         onClick={() =>
-                          transicion("aprobar", "Descuento aprobado: versión final lista.")
+                          transicion("aprobar", "Solicitud aprobada: versión final lista.")
                         }
                         className={btnTeal}
                       >
@@ -757,16 +909,35 @@ export function CotizacionesPanel({
                 ) : (
                   <p className="rounded-[10px] border border-paramo-warn p-3 text-sm text-paramo-fg">
                     Esperando aprobación del Supervisor para{" "}
-                    {actual.desc_solicitado ?? actual.desc_pct}% de descuento. Si editas la
-                    cotización, la solicitud se retira.
+                    {[
+                      (actual.desc_solicitado ?? actual.desc_pct) > DESC_MAX
+                        ? `${actual.desc_solicitado ?? actual.desc_pct}% de descuento`
+                        : "",
+                      lineasConPrecioCambiado(actual.items).length
+                        ? `${lineasConPrecioCambiado(actual.items).length} precio(s) cambiado(s)`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" y ")}
+                    . Si editas la cotización, la solicitud se retira.
                   </p>
                 )
               ) : null}
 
               {actual?.aprobacion ? (
                 <p className="rounded-[10px] bg-paramo-teal-soft p-3 text-sm text-paramo-teal-ink">
-                  Descuento de {actual.aprobacion.desc}% aprobado por{" "}
-                  {actual.aprobacion.por_nombre} el {fechaHora(actual.aprobacion.en)}
+                  {[
+                    actual.aprobacion.desc > DESC_MAX
+                      ? `Descuento de ${actual.aprobacion.desc}%`
+                      : "",
+                    actual.aprobacion.precios.length
+                      ? `${actual.aprobacion.precios.length} precio(s) cambiado(s)`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" y ") || `Descuento de ${actual.aprobacion.desc}%`}{" "}
+                  aprobado por {actual.aprobacion.por_nombre} el{" "}
+                  {fechaHora(actual.aprobacion.en)}
                   {actual.aprobacion.solicitado !== actual.aprobacion.desc
                     ? ` (se solicitó ${actual.aprobacion.solicitado}%)`
                     : ""}
@@ -781,10 +952,20 @@ export function CotizacionesPanel({
               ) : null}
               {actual?.estado === "rechazada" && actual.rechazo ? (
                 <p className="rounded-[10px] border border-paramo-bad p-3 text-sm text-paramo-fg">
-                  El Supervisor rechazó {actual.rechazo.solicitado}% de descuento el{" "}
-                  {fechaHora(actual.rechazo.en)}
+                  El Supervisor rechazó la solicitud (
+                  {[
+                    actual.rechazo.solicitado > DESC_MAX
+                      ? `${actual.rechazo.solicitado}% de descuento`
+                      : "",
+                    lineasConPrecioCambiado(actual.items).length
+                      ? "precios cambiados"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" y ") || `${actual.rechazo.solicitado}%`}
+                  ) el {fechaHora(actual.rechazo.en)}
                   {actual.rechazo.comentario ? `: «${actual.rechazo.comentario}»` : ""}. Ajusta
-                  el descuento y genera de nuevo la versión final.
+                  la cotización y genera de nuevo la versión final.
                 </p>
               ) : null}
 
@@ -886,20 +1067,47 @@ export function CotizacionesPanel({
               </fieldset>
 
               <section aria-labelledby="q-prod-t" className="space-y-2">
-                <h3
-                  id="q-prod-t"
-                  className="text-xs font-bold uppercase tracking-wide text-paramo-muted"
-                >
-                  Productos
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3
+                    id="q-prod-t"
+                    className="text-xs font-bold uppercase tracking-wide text-paramo-muted"
+                  >
+                    Productos
+                  </h3>
+                  <div
+                    role="group"
+                    aria-label="Moneda de la cotización"
+                    className="inline-flex items-center gap-1 rounded-full border border-paramo-line bg-paramo-surface p-1"
+                  >
+                    <span className="pl-2 pr-1 text-[11.5px] font-bold text-paramo-muted">
+                      Cotizar en
+                    </span>
+                    {MONEDAS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        aria-pressed={form.moneda === m}
+                        disabled={!editable || cargando}
+                        onClick={() => elegirMoneda(m)}
+                        className={`min-h-9 rounded-full px-4 text-xs font-bold disabled:cursor-not-allowed ${
+                          form.moneda === m
+                            ? "bg-paramo-brand text-paramo-brand-ink"
+                            : "text-paramo-muted hover:bg-paramo-surface-2"
+                        } ${form.moneda !== m && (!editable || cargando) ? "opacity-60" : ""}`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="overflow-x-auto rounded-[10px] border border-paramo-line">
-                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead>
                       <tr className="border-b border-paramo-line text-[11.5px] font-bold uppercase tracking-wide text-paramo-muted">
                         <th className="px-3 py-2">Producto</th>
                         <th className="px-3 py-2">Tipo de caja</th>
                         <th className="px-3 py-2">Cantidad</th>
-                        <th className="px-3 py-2 text-right">Precio unit.</th>
+                        <th className="px-3 py-2 text-right">Precio unit. ({form.moneda})</th>
                         <th className="px-3 py-2 text-right">Total</th>
                         <th className="px-3 py-2" />
                       </tr>
@@ -914,7 +1122,7 @@ export function CotizacionesPanel({
                                 aria-label="Producto"
                                 disabled={!editable || cargando}
                                 value={l.producto_id}
-                                onChange={(e) => setLinea(i, { producto_id: e.target.value })}
+                                onChange={(e) => elegirProducto(i, e.target.value)}
                                 className={fieldClass}
                               >
                                 <option value="">Elige un producto…</option>
@@ -956,11 +1164,32 @@ export function CotizacionesPanel({
                                 className={fieldClass}
                               />
                             </td>
-                            <td className="px-3 py-2 text-right">
-                              {c.precio ? formatCOP(c.precio) : "—"}
+                            <td className="w-44 px-3 py-2 text-right">
+                              <InputMoneda
+                                aria-label="Precio unitario"
+                                disabled={!editable || cargando || !l.producto_id}
+                                decimales={form.moneda === "USD" ? 2 : 0}
+                                value={l.precio}
+                                onValueChange={(v) => setLinea(i, { precio: v })}
+                                className={`${fieldClass} text-right ${
+                                  c.precio !== c.precio_lista && l.producto_id
+                                    ? "border-paramo-warn"
+                                    : ""
+                                }`}
+                              />
+                              {l.producto_id && c.precio !== c.precio_lista ? (
+                                <span className="mt-0.5 block text-[11px] text-paramo-warn">
+                                  Catálogo: {dinero(c.precio_lista)}
+                                </span>
+                              ) : null}
+                              {l.producto_id && !(c.precio_lista > 0) ? (
+                                <span className="mt-0.5 block text-[11px] text-paramo-muted">
+                                  Sin precio en {form.moneda} en Productos
+                                </span>
+                              ) : null}
                             </td>
                             <td className="px-3 py-2 text-right font-bold text-paramo-fg">
-                              {formatCOP(c.cant * c.precio)}
+                              {dinero(c.cant * c.precio)}
                             </td>
                             <td className="w-12 px-3 py-2">
                               {editable && form.items.length > 1 ? (
@@ -991,7 +1220,7 @@ export function CotizacionesPanel({
                     onClick={() =>
                       setForm((prev) => ({
                         ...prev,
-                        items: [...prev.items, { producto_id: "", caja: "", cant: "1" }],
+                        items: [...prev.items, lineaVacia()],
                       }))
                     }
                     className={btnGhost}
@@ -1034,7 +1263,7 @@ export function CotizacionesPanel({
                       </select>
                     </div>
                   </div>
-                  {editable && descNum > DESC_MAX && (esSupervisor || necesitaAprobacion(descNum)) ? (
+                  {editable && descNum > DESC_MAX && (esSupervisor || descSinAprobar(descNum)) ? (
                     <p
                       className={`rounded-[10px] border p-3 text-sm ${
                         esSupervisor
@@ -1045,6 +1274,32 @@ export function CotizacionesPanel({
                       {esSupervisor
                         ? `Como Supervisor, tu descuento de ${descNum}% queda aprobado al generar la versión final.`
                         : `Un descuento de ${descNum}% supera el ${DESC_MAX}% autorizado. Puedes sugerirlo: al generar la versión final se envía al Supervisor para su aprobación.`}
+                    </p>
+                  ) : null}
+                  {editable && lineasSinPrecio.length > 0 ? (
+                    <p
+                      className="rounded-[10px] border border-paramo-bad p-3 text-sm text-paramo-fg"
+                      role="alert"
+                    >
+                      Hay {lineasSinPrecio.length}{" "}
+                      {lineasSinPrecio.length === 1 ? "producto" : "productos"} con precio{" "}
+                      {dinero(0)}. Define el precio de cada producto para poder generar la versión
+                      final (el borrador sí se puede guardar).
+                    </p>
+                  ) : null}
+                  {editable && lineasCambiadas.length > 0 ? (
+                    <p
+                      className={`rounded-[10px] border p-3 text-sm ${
+                        esSupervisor
+                          ? "border-paramo-teal bg-paramo-teal-soft text-paramo-teal-ink"
+                          : "border-paramo-warn text-paramo-fg"
+                      }`}
+                    >
+                      {esSupervisor
+                        ? `Cambiaste el precio de ${lineasCambiadas.length} producto(s) frente al catálogo; como Supervisor queda aprobado al generar la versión final.`
+                        : preciosSinAprobar.length > 0
+                          ? `Cambiaste el precio de ${preciosSinAprobar.length} producto(s) frente al catálogo. Al generar la versión final se envía al Supervisor para su aprobación.`
+                          : "Los precios cambiados ya fueron aprobados por el Supervisor."}
                     </p>
                   ) : null}
                   <div className="space-y-1">
@@ -1063,13 +1318,13 @@ export function CotizacionesPanel({
                   </div>
                 </fieldset>
                 <dl className="space-y-1 self-start rounded-[10px] border border-paramo-line p-3 text-sm">
-                  <Fila k="Subtotal" v={formatCOP(totales.sub)} />
-                  <Fila k={`Descuento (${totales.d}%)`} v={`− ${formatCOP(totales.dv)}`} />
-                  <Fila k="Base" v={formatCOP(totales.base)} />
-                  <Fila k={`IVA (${Number(form.iva_pct) || 0}%)`} v={formatCOP(totales.iva)} />
+                  <Fila k="Subtotal" v={dinero(totales.sub)} />
+                  <Fila k={`Descuento (${totales.d}%)`} v={`− ${dinero(totales.dv)}`} />
+                  <Fila k="Base" v={dinero(totales.base)} />
+                  <Fila k={`IVA (${Number(form.iva_pct) || 0}%)`} v={dinero(totales.iva)} />
                   <div className="mt-2 flex items-baseline justify-between border-t border-paramo-line pt-2 text-base">
                     <dt className="font-bold text-paramo-fg">Total</dt>
-                    <dd className="font-bold text-paramo-brand">{formatCOP(totales.tot)}</dd>
+                    <dd className="font-bold text-paramo-brand">{dinero(totales.tot)}</dd>
                   </div>
                 </dl>
               </div>
@@ -1147,13 +1402,11 @@ export function CotizacionesPanel({
                         </button>
                         <button
                           type="button"
-                          onClick={() => guardar("final")}
-                          disabled={cargando}
+                          onClick={pedirFinal}
+                          disabled={cargando || lineasSinPrecio.length > 0}
                           className={btnPrimary}
                         >
-                          {necesitaAprobacion(descNum)
-                            ? "Solicitar aprobación"
-                            : "Generar versión final"}
+                          {requiereAprobacion ? "Solicitar aprobación" : "Generar versión final"}
                         </button>
                       </>
                     ) : null}
@@ -1209,6 +1462,70 @@ export function CotizacionesPanel({
                 ) : null}
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {abierta && confirmaPrecios ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-paramo-fg/50 p-4"
+          role="presentation"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="q-conf-t"
+            className="w-full max-w-lg space-y-3 rounded-[10px] border border-paramo-line bg-paramo-surface p-4 shadow-lg"
+          >
+            <h3 id="q-conf-t" className="font-paramo-display text-lg font-bold text-paramo-fg">
+              Confirmar cambio de precios
+            </h3>
+            <p className="text-sm text-paramo-muted">
+              Vas a cambiar el precio de lista de{" "}
+              {lineasCambiadas.length === 1 ? "este producto" : "estos productos"}:
+            </p>
+            <ul className="max-h-60 space-y-1 overflow-y-auto rounded-lg bg-paramo-surface-2 p-3 text-sm">
+              {form.items.flatMap((l, k) => {
+                const c = lineasCalculadas[k];
+                if (!l.producto_id || !(c.cant > 0) || c.precio === c.precio_lista) return [];
+                return [
+                  <li key={k} className="flex flex-wrap justify-between gap-2">
+                    <b className="text-paramo-fg">
+                      {productoPorId.get(l.producto_id)?.nombre ?? "Producto"}
+                    </b>
+                    <span className="text-paramo-muted">
+                      de {dinero(c.precio_lista)} a{" "}
+                      <b className="text-paramo-fg">{dinero(c.precio)}</b>
+                    </span>
+                  </li>,
+                ];
+              })}
+            </ul>
+            <p className="text-sm text-paramo-fg">
+              {requiereAprobacion
+                ? "La cotización se enviará al Supervisor para su aprobación antes de poder enviarla al cliente."
+                : esSupervisor
+                  ? "Como Supervisor, estos precios quedan aprobados al generar la versión final."
+                  : "Estos precios ya fueron aprobados por el Supervisor."}
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmaPrecios(false)}
+                disabled={cargando}
+                className={btnGhost}
+              >
+                Volver y revisar
+              </button>
+              <button
+                type="button"
+                onClick={() => void guardar("final")}
+                disabled={cargando}
+                className={btnPrimary}
+              >
+                {requiereAprobacion ? "Confirmar y solicitar aprobación" : "Confirmar cambio"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

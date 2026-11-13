@@ -12,9 +12,15 @@ import {
 } from "@/config/cotizaciones";
 import type { Rol } from "@/config/roles";
 import type { AuthContext } from "@/lib/auth";
-import { calcularTotales } from "@/lib/cotizaciones-calculo";
+import { calcularTotales, lineasConPrecioCambiado } from "@/lib/cotizaciones-calculo";
 import { todayBogota } from "@/lib/format";
-import { formatCOP, precioParaTipo } from "@/lib/precios";
+import {
+  formatMoneda,
+  isMoneda,
+  precioParaTipo,
+  redondearMoneda,
+  type Moneda,
+} from "@/lib/precios";
 import {
   PRODUCTO_SELECT,
   mapProductoRow,
@@ -27,13 +33,14 @@ import type {
   ContactoCliente,
   CotizacionListItem,
   DecisionDescuento,
+  PrecioAprobado,
   ProspectoCotizable,
 } from "@/lib/types/cotizacion";
 import type { ProductoListItem, TipoClientePrecio } from "@/lib/types/producto";
 import { filtroResponsablesOcultos, idsProspectosOcultos } from "@/lib/visibilidad";
 
 export const COTIZACION_SELECT = `
-  id, numero, version, prospecto_id, cliente_nombre, tipo_cliente_codigo, fecha,
+  id, numero, version, prospecto_id, cliente_nombre, tipo_cliente_codigo, fecha, moneda,
   validez_dias, pago, entrega, notas, items, desc_pct, iva_pct, total, estado,
   desc_solicitado, solicitado_en, aprobacion, rechazo, final_en, enviada_en,
   cerrada_en, creado_por, creado_en
@@ -49,6 +56,7 @@ export type CotizacionRow = {
   cliente_nombre: string;
   tipo_cliente_codigo: string | null;
   fecha: string;
+  moneda: string;
   validez_dias: number;
   pago: string;
   entrega: string;
@@ -90,7 +98,19 @@ function mapItems(raw: unknown): CotizacionItem[] {
       caja: str(o.caja),
       cant: Number(o.cant) || 0,
       precio: Number(o.precio) || 0,
+      // Cotizaciones anteriores no lo guardaron: null = sin cambio manual conocido.
+      precio_lista: o.precio_lista == null ? null : Number(o.precio_lista) || 0,
     };
+  });
+}
+
+function mapPreciosAprobados(raw: unknown): PrecioAprobado[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((p) => {
+    const o = rec(p);
+    return typeof o.producto_id === "string"
+      ? [{ producto_id: o.producto_id, precio: Number(o.precio) || 0 }]
+      : [];
   });
 }
 
@@ -120,6 +140,7 @@ export function mapCotizacionRow(
     cliente_nombre: row.cliente_nombre ?? "",
     tipo_cliente_codigo: row.tipo_cliente_codigo,
     fecha: row.fecha,
+    moneda: isMoneda(row.moneda) ? row.moneda : "COP",
     validez_dias: row.validez_dias,
     pago: (PAGOS as readonly string[]).includes(row.pago) ? (row.pago as Pago) : "Contado",
     entrega: row.entrega ?? "",
@@ -132,7 +153,11 @@ export function mapCotizacionRow(
     desc_solicitado: row.desc_solicitado == null ? null : Number(row.desc_solicitado),
     solicitado_en: row.solicitado_en,
     aprobacion: aprob
-      ? ({ ...aprob, desc: Number(rec(row.aprobacion).desc) || 0 } as AprobacionDescuento)
+      ? ({
+          ...aprob,
+          desc: Number(rec(row.aprobacion).desc) || 0,
+          precios: mapPreciosAprobados(rec(row.aprobacion).precios),
+        } as AprobacionDescuento)
       : null,
     rechazo: mapDecision(row.rechazo, nombres),
     final_en: row.final_en,
@@ -294,6 +319,7 @@ export const cotizacionGuardarSchema = z.object({
   modo: z.enum(["borrador", "final"]),
   prospecto_id: z.string().uuid(),
   // El tipo de cliente sale del prospecto y la fecha es la del registro: el servidor los fija.
+  moneda: z.enum(["COP", "USD"]).default("COP"),
   validez_dias: z.coerce.number().int().min(1).max(365),
   pago: z.enum(PAGOS),
   entrega: z
@@ -314,6 +340,9 @@ export const cotizacionGuardarSchema = z.object({
           .union([z.enum(CAJAS), z.literal(""), z.null(), z.undefined()])
           .transform((v) => v ?? ""),
         cant: z.coerce.number().min(0).max(1_000_000),
+        // Precio escrito por el comercial. Omitido o null = el del catálogo. El servidor
+        // siempre recalcula el de catálogo para saber si lo cambió y exigir aprobación.
+        precio: z.number().min(0).max(1_000_000_000_000).nullable().optional(),
       }),
     )
     .max(60),
@@ -333,8 +362,10 @@ export type ResultadoGuardado =
 
 /**
  * Arma lo que se persiste al guardar (as-is qSave + qPrepare), con una diferencia clave:
- * los precios de las líneas los recalcula el SERVIDOR desde el catálogo; el navegador solo
- * manda producto, caja y cantidad. El as-is confiaba en el precio que calculaba el cliente.
+ * el precio de catálogo de cada línea lo recalcula el SERVIDOR; el navegador manda
+ * producto, caja, cantidad y, si quiere, un precio propio. Ese precio se acepta, pero se
+ * compara con el de catálogo (`precio_lista`): si el comercial lo cambió, la cotización
+ * necesita la aprobación del supervisor antes de quedar final, igual que un descuento > 5%.
  */
 export function prepararGuardado(args: {
   auth: AuthContext;
@@ -347,19 +378,17 @@ export function prepararGuardado(args: {
 }): ResultadoGuardado {
   const { auth, existente, body, prospecto, tipo, productos, ahoraISO } = args;
   const esSupervisor = auth.profile.rol === "supervisor";
+  const moneda: Moneda = body.moneda;
+  const dinero = (n: number) => formatMoneda(n, moneda);
 
   const items: CotizacionItem[] = [];
   for (const it of body.items) {
     if (!it.producto_id || !(it.cant > 0)) continue;
     const producto = productos.get(it.producto_id);
     if (!producto) return { ok: false, error: "Hay un producto que ya no existe en el catálogo." };
-    const precio = precioParaTipo(producto, tipo);
-    if (!precio) {
-      return {
-        ok: false,
-        error: "Hay productos sin PVP. Complétalo en el módulo Productos.",
-      };
-    }
+    // Sin precio en esta moneda la lista es 0: el comercial lo escribe (y se aprueba).
+    const lista = redondearMoneda(precioParaTipo(producto, tipo, moneda), moneda);
+    const precio = redondearMoneda(it.precio ?? lista, moneda);
     items.push({
       producto_id: producto.id,
       nombre: producto.nombre,
@@ -367,10 +396,17 @@ export function prepararGuardado(args: {
       caja: it.caja,
       cant: it.cant,
       precio,
+      precio_lista: lista,
     });
   }
   if (items.length === 0) {
     return { ok: false, error: "Agrega al menos un producto con cantidad." };
+  }
+  if (body.modo === "final" && items.some((i) => !(i.precio > 0))) {
+    return {
+      ok: false,
+      error: `Hay productos con precio ${dinero(0)}. Define el precio de cada producto antes de confirmar.`,
+    };
   }
   if (body.modo === "final" && items.some((i) => !i.caja)) {
     return {
@@ -379,12 +415,13 @@ export function prepararGuardado(args: {
     };
   }
 
-  const totales = calcularTotales(items, body.desc_pct, body.iva_pct);
+  const totales = calcularTotales(items, body.desc_pct, body.iva_pct, moneda);
   const wasPend = existente?.estado === "pendiente";
   const base: Record<string, unknown> = {
     prospecto_id: prospecto.id,
     cliente_nombre: prospecto.empresa,
     tipo_cliente_codigo: tipo.codigo,
+    moneda,
     fecha: existente?.fecha ?? todayBogota(),
     validez_dias: body.validez_dias,
     pago: body.pago,
@@ -405,17 +442,31 @@ export function prepararGuardado(args: {
       campos: { ...base, estado: "borrador", rechazo: null },
       accion: esNueva ? "Cotización creada" : "Cotización editada",
       detalle: (n) =>
-        `${n} · ${prospecto.empresa} · ${formatCOP(totales.tot)}${wasPend ? " (se retiró la solicitud de aprobación)" : ""}`,
+        `${n} · ${prospecto.empresa} · ${dinero(totales.tot)}${wasPend ? " (se retiró la solicitud de aprobación)" : ""}`,
     };
   }
 
-  // Un descuento ya aprobado por el supervisor no se vuelve a pedir si no cambia.
-  const yaAprobado =
-    body.desc_pct > DESC_MAX &&
-    !!existente?.aprobacion &&
-    existente.aprobacion.desc === body.desc_pct;
+  // Lo que ya aprobó el supervisor no se vuelve a pedir si no cambia: ni el descuento ni los
+  // precios cambiados (mismo producto al mismo precio).
+  const previa = existente?.aprobacion ?? null;
+  const descCoincide = !!previa && previa.desc === body.desc_pct;
+  const cambiadas = lineasConPrecioCambiado(items);
+  const preciosCubiertos = cambiadas.every((l) =>
+    previa?.precios.some((p) => p.producto_id === l.producto_id && p.precio === l.precio),
+  );
+  const necesitaDescuento = body.desc_pct > DESC_MAX && !descCoincide;
+  const necesitaPrecios = cambiadas.length > 0 && !preciosCubiertos;
+  const preciosAprobar: PrecioAprobado[] = cambiadas.flatMap((l) =>
+    l.producto_id ? [{ producto_id: l.producto_id, precio: l.precio }] : [],
+  );
+  const motivo = [
+    necesitaDescuento ? `${body.desc_pct}% de descuento` : "",
+    necesitaPrecios ? `${cambiadas.length} precio(s) cambiado(s)` : "",
+  ]
+    .filter(Boolean)
+    .join(" y ");
 
-  if (body.desc_pct > DESC_MAX && !esSupervisor && !yaAprobado) {
+  if (!esSupervisor && (necesitaDescuento || necesitaPrecios)) {
     return {
       ok: true,
       estado: "pendiente",
@@ -426,32 +477,34 @@ export function prepararGuardado(args: {
         solicitado_en: ahoraISO,
         rechazo: null,
       },
-      accion: "Aprobación de descuento solicitada",
+      accion: "Aprobación solicitada",
       detalle: (n) =>
-        `${n} · ${prospecto.empresa} · ${body.desc_pct}% · ${formatCOP(totales.tot)}`,
+        `${n} · ${prospecto.empresa} · ${motivo} · ${dinero(totales.tot)}`,
     };
   }
 
   const version = (existente?.version ?? 0) + 1;
-  let aprobacion: unknown = existente?.aprobacion
-    ? {
-        por: existente.aprobacion.por,
-        en: existente.aprobacion.en,
-        desc: existente.aprobacion.desc,
-        solicitado: existente.aprobacion.solicitado,
-        comentario: existente.aprobacion.comentario,
-      }
-    : null;
-  if (body.desc_pct > DESC_MAX && !yaAprobado) {
+  let aprobacion: unknown = null;
+  if (necesitaDescuento || necesitaPrecios) {
+    // Solo llega aquí el supervisor: lo suyo queda registrado como aprobado.
     aprobacion = {
       por: auth.userId,
       en: ahoraISO,
       desc: body.desc_pct,
       solicitado: body.desc_pct,
-      comentario: "Descuento del Supervisor",
+      comentario: "Cambios del Supervisor",
+      precios: preciosAprobar,
     };
-  } else if (!(existente?.aprobacion && existente.aprobacion.desc === body.desc_pct)) {
-    aprobacion = null;
+  } else if (previa && (descCoincide || cambiadas.length > 0)) {
+    // La aprobación previa sigue valiendo (mismo descuento y/o mismos precios cambiados).
+    aprobacion = {
+      por: previa.por,
+      en: previa.en,
+      desc: previa.desc === body.desc_pct ? previa.desc : body.desc_pct,
+      solicitado: previa.solicitado,
+      comentario: previa.comentario,
+      precios: previa.precios,
+    };
   }
 
   return {
@@ -467,7 +520,7 @@ export function prepararGuardado(args: {
     },
     accion: "Cotización final generada",
     detalle: (n) =>
-      `${n} v${version} · ${prospecto.empresa} · ${body.desc_pct ? body.desc_pct + "% desc. · " : ""}${formatCOP(totales.tot)}`,
+      `${n} v${version} · ${prospecto.empresa} · ${body.desc_pct ? body.desc_pct + "% desc. · " : ""}${cambiadas.length ? cambiadas.length + " precio(s) cambiado(s) · " : ""}${dinero(totales.tot)}`,
   };
 }
 

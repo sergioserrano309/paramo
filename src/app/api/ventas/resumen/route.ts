@@ -15,6 +15,7 @@ const querySchema = z.object({
   periodo: z.string().refine(esPeriodoValido),
   por: z.enum(["cliente", "producto"]),
   cliente: z.string().trim().min(1).max(200).optional(),
+  moneda: z.enum(["COP", "USD"]).default("COP"),
 });
 
 /**
@@ -38,11 +39,12 @@ export async function GET(request: Request) {
     periodo: sp.get("periodo") ?? "12m",
     por: sp.get("por") ?? "cliente",
     cliente: sp.get("cliente") ?? undefined,
+    moneda: sp.get("moneda") ?? "COP",
   });
   if (!parsed.success) {
     return NextResponse.json({ error: DENIED }, { status: 422 });
   }
-  const { periodo, por, cliente } = parsed.data;
+  const { periodo, por, cliente, moneda } = parsed.data;
 
   const service = createServiceClient();
   const meses = await cargarMesesVentas(service);
@@ -62,13 +64,14 @@ export async function GET(request: Request) {
   }
 
   const [totales, filas] = await Promise.all([
-    cliente ? Promise.resolve(null) : totalesVentas(service, rango.desde, rango.hasta),
+    cliente ? Promise.resolve(null) : totalesVentas(service, rango.desde, rango.hasta, moneda),
     resumenVentas(service, {
       desde: rango.desde,
       hasta: rango.hasta,
       // Con cliente se piden sus productos, sin importar la pestaña.
       por: cliente ? "producto" : por,
       cliente: cliente ?? null,
+      moneda,
     }),
   ]);
   if (!filas || (!cliente && !totales)) {

@@ -1,8 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Rol } from "@/config/roles";
+import { isMoneda, type Moneda } from "@/lib/precios";
 import { idsProspectosOcultos } from "@/lib/visibilidad";
 
 export type ResumenSeguimiento = { interesados: number; opiniones: number; promedio: number };
+
+/** Cotización en que el comercial cambió a mano el precio de un producto. */
+export type CambioPrecioCotizacion = {
+  cotizacion_id: string;
+  numero: string;
+  cliente: string;
+  moneda: Moneda;
+  /** Precio cotizado. */
+  precio: number;
+  /** Precio que tenía el producto en el catálogo al cotizar. */
+  precio_lista: number;
+  estado: string;
+  en: string | null;
+};
 
 export type InteresadoProducto = { id: string; empresa: string; etapa: string };
 
@@ -70,8 +85,12 @@ export async function cargarSeguimientoProducto(
   service: SupabaseClient,
   id: string,
   rol: Rol,
-): Promise<{ interesados: InteresadoProducto[]; opiniones: OpinionProducto[] } | null> {
-  const [interes, opiniones, ocultos] = await Promise.all([
+): Promise<{
+  interesados: InteresadoProducto[];
+  opiniones: OpinionProducto[];
+  cambios_precio: CambioPrecioCotizacion[];
+} | null> {
+  const [interes, opiniones, cotizaciones, ocultos] = await Promise.all([
     service
       .from("prospecto_productos")
       .select(
@@ -88,10 +107,40 @@ export async function cargarSeguimientoProducto(
       .order("fecha", { ascending: false })
       .order("creado_en", { ascending: false })
       .limit(200),
+    // Cotizaciones que incluyen el producto; abajo se queda con las que cambiaron su precio.
+    service
+      .from("cotizaciones")
+      .select("id, numero, prospecto_id, cliente_nombre, moneda, items, estado, final_en, solicitado_en")
+      .contains("items", [{ producto_id: id }])
+      .in("estado", ["pendiente", "final", "enviada", "aceptada", "no_aceptada"])
+      .order("numero", { ascending: false })
+      .limit(300),
     // El comercial no ve prospectos del supervisor, ni sus opiniones.
     idsProspectosOcultos(service, rol),
   ]);
-  if (interes.error || opiniones.error) return null;
+  if (interes.error || opiniones.error || cotizaciones.error) return null;
+
+  const cambios_precio: CambioPrecioCotizacion[] = [];
+  for (const c of cotizaciones.data ?? []) {
+    if (c.prospecto_id && ocultos.has(c.prospecto_id as string)) continue;
+    const items = Array.isArray(c.items) ? (c.items as Array<Record<string, unknown>>) : [];
+    for (const it of items) {
+      if (it.producto_id !== id || it.precio_lista == null) continue;
+      const precio = Number(it.precio) || 0;
+      const lista = Number(it.precio_lista) || 0;
+      if (precio === lista) continue;
+      cambios_precio.push({
+        cotizacion_id: c.id as string,
+        numero: c.numero as string,
+        cliente: (c.cliente_nombre as string) ?? "",
+        moneda: isMoneda(c.moneda) ? c.moneda : "COP",
+        precio,
+        precio_lista: lista,
+        estado: c.estado as string,
+        en: ((c.final_en ?? c.solicitado_en) as string | null) ?? null,
+      });
+    }
+  }
 
   const interesados: InteresadoProducto[] = [];
   for (const r of interes.data ?? []) {
@@ -105,6 +154,7 @@ export async function cargarSeguimientoProducto(
 
   return {
     interesados,
+    cambios_precio,
     opiniones: ((opiniones.data ?? []) as unknown as FilaOpinion[])
       .filter((o) => !o.prospecto_id || !ocultos.has(o.prospecto_id))
       .map((o) => ({

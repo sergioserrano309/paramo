@@ -1,6 +1,7 @@
 import { EMPRESA } from "@/config/empresa";
 import { ESTADOS_FINALES } from "@/config/cotizaciones";
 import { calcularTotales } from "@/lib/cotizaciones-calculo";
+import type { Moneda } from "@/lib/precios";
 import { sumarDias } from "@/lib/fechas";
 import type { ContactoCliente, CotizacionListItem } from "@/lib/types/cotizacion";
 
@@ -17,7 +18,16 @@ const TE: RGB = [84, 150, 126];
 const GR: RGB = [100, 107, 115];
 const INK: RGB = [31, 35, 40];
 
-const money = (n: number) => "$ " + Math.round(n || 0).toLocaleString("es-CO");
+/** Monto en la moneda de la cotización: COP en pesos enteros; USD con centavos. */
+function dinero(n: number, moneda: Moneda): string {
+  if (moneda === "USD") {
+    return (
+      "USD " +
+      (n || 0).toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+  }
+  return "$ " + Math.round(n || 0).toLocaleString("es-CO");
+}
 
 function fechaLarga(s: string): string {
   const d = new Date(`${s}T12:00:00`);
@@ -71,7 +81,8 @@ export async function descargarCotizacionPdf(args: {
   const H = 297;
   const M = 16;
   const fin = ESTADOS_FINALES.includes(cot.estado);
-  const t = calcularTotales(cot.items, cot.desc_pct, cot.iva_pct);
+  const money = (n: number) => dinero(n, cot.moneda);
+  const t = calcularTotales(cot.items, cot.desc_pct, cot.iva_pct, cot.moneda);
 
   if (logo) {
     try {
@@ -221,7 +232,7 @@ export async function descargarCotizacionPdf(args: {
   doc.setTextColor(...GR);
   const notas = [
     cot.notas,
-    `Precios en pesos colombianos (COP). Cotización válida por ${cot.validez_dias} días.`,
+    `Precios en ${cot.moneda === "USD" ? "dólares estadounidenses (USD)" : "pesos colombianos (COP)"}. Cotización válida por ${cot.validez_dias} días.`,
   ]
     .filter(Boolean)
     .join("\n");

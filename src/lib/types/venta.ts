@@ -2,7 +2,10 @@ export type VentaMes = {
   mes: string;
   filas: number;
   unidades: number;
+  /** Ventas del mes en COP. */
   valor: number;
+  /** Ventas del mes en USD. */
+  valor_usd: number;
   archivo: string;
   cargado_en: string | null;
   cargado_por_nombre: string;

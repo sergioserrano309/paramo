@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Moneda } from "@/lib/precios";
 import { nombresDePerfiles } from "@/lib/productos";
 import type {
   AgruparVentasPor,
@@ -12,6 +13,7 @@ type MesRow = {
   filas: number;
   unidades: number | string;
   valor: number | string;
+  valor_usd: number | string | null;
   archivo: string | null;
   cargado_en: string | null;
   cargado_por: string | null;
@@ -22,7 +24,7 @@ export async function cargarMesesVentas(
 ): Promise<VentaMes[] | null> {
   const { data, error } = await service
     .from("ventas_por_mes")
-    .select("mes, filas, unidades, valor, archivo, cargado_en, cargado_por")
+    .select("mes, filas, unidades, valor, valor_usd, archivo, cargado_en, cargado_por")
     .order("mes", { ascending: false })
     .limit(240);
   if (error) return null;
@@ -34,6 +36,7 @@ export async function cargarMesesVentas(
     filas: r.filas,
     unidades: Number(r.unidades) || 0,
     valor: Number(r.valor) || 0,
+    valor_usd: Number(r.valor_usd) || 0,
     archivo: r.archivo ?? "",
     cargado_en: r.cargado_en,
     cargado_por_nombre: (r.cargado_por && nombres.get(r.cargado_por)) || "—",
@@ -58,6 +61,8 @@ export async function resumenVentas(
     por: AgruparVentasPor;
     cliente?: string | null;
     productoClave?: string | null;
+    /** Los totales de una moneda no se mezclan con los de la otra. */
+    moneda?: Moneda;
   },
 ): Promise<VentaResumenFila[] | null> {
   const { data, error } = await service.rpc("ventas_resumen", {
@@ -66,6 +71,7 @@ export async function resumenVentas(
     p_por: args.por,
     p_cliente: args.cliente ?? null,
     p_producto_clave: args.productoClave ?? null,
+    p_moneda: args.moneda ?? "COP",
   });
   if (error) return null;
   return ((data ?? []) as ResumenRow[]).map((r) => ({
@@ -83,10 +89,12 @@ export async function totalesVentas(
   service: SupabaseClient,
   desde: string,
   hasta: string,
+  moneda: Moneda = "COP",
 ): Promise<VentaTotales | null> {
   const { data, error } = await service.rpc("ventas_totales", {
     p_desde: desde,
     p_hasta: hasta,
+    p_moneda: moneda,
   });
   if (error) return null;
   const r = ((data ?? []) as Array<Record<string, number | string>>)[0];

@@ -107,6 +107,30 @@ Se replicó el as-is: el comercial puede elegir responsable en el alta.
 6. Sin pendientes en `compromisos`: columna «Sin compromiso». Con filas, fecha y título.
 7. Móvil (~360px): cards en lugar de tabla.
 
+## Ajustes de noviembre 2026: «Otro» en ¿Cómo llegó? y canal Maquila
+
+**Desarrollado**
+
+- «¿Cómo llegó?» = «Otro» muestra el campo «¿Cuál canal?» (obligatorio al crear, en
+  Prospectos y en el Funnel; opcional al editar en la ficha). Al guardar, el servidor crea esa
+  fuente en `fuentes` (o reutiliza la existente con el mismo nombre, sin distinguir
+  mayúsculas) y el prospecto queda con la fuente nueva. Tras `router.refresh()` la opción
+  aparece en el desplegable, antes de «Otro», que se mantiene al final (`fuentes.orden`).
+- Canal «Maquila»: seed `supabase/seed/006_canal_maquila.sql`.
+
+**Decisiones**
+
+- Sin tabla ni columna nuevas: la fuente nueva es una fila de `fuentes` (catálogo existente).
+  La lógica vive en `src/lib/fuentes.ts` (`resolverFuenteOtro`), llamada desde
+  `POST /api/prospectos` y `PATCH /api/prospectos/[id]` con el campo `fuente_otro`.
+- Maquila usa por ahora la lista de precios de Distribuidor (como Mayorista); cuando el
+  negocio defina una lista propia basta cambiar `canales.tipo_cliente_codigo` de ese canal.
+- Cualquier usuario que pueda crear prospectos puede añadir una fuente nueva; no hay pantalla
+  de administración de fuentes (límite del hito).
+
+**Cómo probar**: aplicar el seed 006; en «+ Prospecto» elegir ¿Cómo llegó? → Otro, escribir un
+canal, crear y reabrir el formulario: la nueva opción aparece.
+
 ## Archivos clave
 
 - `supabase/migrations/20261022170000_crear_prospectos_y_catalogos.sql`
@@ -123,3 +147,11 @@ Se replicó el as-is: el comercial puede elegir responsable en el alta.
 - `src/app/api/prospectos/[id]/observaciones/route.ts`
 - `src/lib/actividad.ts`, `src/config/motivos-inactivo.ts`
 - `src/lib/permissions.ts` / `src/lib/can.ts`
+
+## Moneda de la venta mensual estimada (noviembre 2026)
+
+El prospecto guarda su venta mensual estimada en **COP o USD** (`prospectos.valor_moneda`,
+selector COP/USD junto al monto en Prospectos, Funnel y ficha; USD admite centavos). Los
+totales del Funnel (en juego y por etapa), del Dashboard y de Supervisión se muestran **por
+moneda, sin sumar COP con USD** (no hay tasa de cambio). Migración
+`20261113100000_moneda_en_prospectos_y_ventas.sql`. Los compromisos no tienen monto: no cambian.

@@ -5,7 +5,7 @@ import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
 import { registrarBitacora } from "@/lib/bitacora";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { clientKey, readJsonBody } from "@/lib/http";
-import { formatCOP } from "@/lib/precios";
+import { formatCOP, formatUSD } from "@/lib/precios";
 import {
   aplicarPropuestaPrecios,
   cargarProducto,
@@ -51,7 +51,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const parsed = productoCamposSchema.safeParse(body.json);
   if (!parsed.success) {
-    return NextResponse.json({ error: UPDATE_DENIED }, { status: 422 });
+    const sinPvp = parsed.error.issues.some((i) => i.message === "pvp");
+    return NextResponse.json(
+      { error: sinPvp ? "Escribe el PVP en COP, en USD o en ambos." : UPDATE_DENIED },
+      { status: 422 },
+    );
   }
   const campos = parsed.data;
 
@@ -89,6 +93,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .update({
       nombre: campos.nombre,
       precio_publico: campos.precio_publico,
+      precio_publico_usd: campos.precio_publico_usd,
       linea: campos.linea,
       estado: campos.estado,
       presentacion: campos.presentacion,
@@ -120,6 +125,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (actual.precio_publico !== campos.precio_publico) {
     cambiosFicha.push(
       `PVP ${formatCOP(actual.precio_publico)} → ${formatCOP(campos.precio_publico)}`,
+    );
+  }
+  if (actual.precio_publico_usd !== campos.precio_publico_usd) {
+    cambiosFicha.push(
+      `PVP USD ${formatUSD(actual.precio_publico_usd)} → ${formatUSD(campos.precio_publico_usd)}`,
     );
   }
   if (actual.nombre !== campos.nombre) {

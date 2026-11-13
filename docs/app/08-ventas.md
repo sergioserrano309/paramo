@@ -90,3 +90,16 @@ Cuando el historial de ventas sea grande y Dashboard, Ventas o la ficha de produ
 - Enlazar ventas con prospectos (por NIT o nombre) para ver compras en la ficha del cliente.
 - Cambio de `producto_clave` a FK cuando el catálogo esté estable.
 - Importar directamente desde el sistema contable.
+
+## Ventas en COP y USD (noviembre 2026)
+
+- El Excel admite una columna opcional **«Moneda»** (COP o USD; vacía = COP), así los archivos
+  actuales siguen cargando igual. Otro valor se reporta como error de esa fila. Un mismo
+  archivo puede traer ambas monedas; la carga sigue reemplazando completos los meses del
+  archivo. La plantilla descargable `public/Plantilla_Ventas_Paramo.xlsx` **no** se modificó:
+  la columna se añade a mano al archivo.
+- `ventas.moneda`; `ventas_por_mes` expone `valor` (COP) y `valor_usd`; `ventas_resumen` y
+  `ventas_totales` reciben `p_moneda` (default COP). Se eliminaron las firmas anteriores de
+  esas funciones (migración `20261113100000_moneda_en_prospectos_y_ventas.sql`).
+- Ventas: selector COP/USD en «Análisis de ventas»; «Meses cargados» muestra ambas columnas.
+- Límite: la ficha de producto («ventas 12 meses») y el seguimiento por producto siguen en COP.

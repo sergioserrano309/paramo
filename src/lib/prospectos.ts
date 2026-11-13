@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseActividad } from "@/lib/actividad";
+import { isMoneda } from "@/lib/precios";
 import type { ProspectoListItem } from "@/lib/types/prospecto";
 
 export const PROSPECTO_SELECT_LIST = `
   id, empresa, nit, contacto, cargo, telefono, email, ciudad,
   canal_codigo, fuente_codigo, etapa_codigo,
-  valor_mensual_estimado, calificacion, notas, activo,
+  valor_mensual_estimado, valor_moneda, calificacion, notas, activo,
   motivo_perdida, motivo_inactivo, inactivo_en, etapa_desde, ganado_en,
   actividad, responsable_id, creado_en, ultimo_contacto,
   canales ( nombre ),
@@ -28,6 +29,7 @@ export type ProspectoRow = {
   fuente_codigo: string | null;
   etapa_codigo: string;
   valor_mensual_estimado: number | string;
+  valor_moneda: string;
   calificacion: number;
   notas: string;
   activo: boolean;
@@ -64,6 +66,7 @@ export function mapProspectoRow(row: ProspectoRow): ProspectoListItem {
     etapa_codigo: row.etapa_codigo,
     etapa_nombre: row.etapas_funnel?.nombre ?? row.etapa_codigo,
     valor_mensual_estimado: Number(row.valor_mensual_estimado) || 0,
+    valor_moneda: isMoneda(row.valor_moneda) ? row.valor_moneda : "COP",
     calificacion: row.calificacion ?? 0,
     notas: row.notas ?? "",
     activo: row.activo !== false,

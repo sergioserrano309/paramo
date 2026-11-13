@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { formatCOP } from "@/lib/precios";
+import { MONEDAS, formatMoneda, type Moneda } from "@/lib/precios";
 import { pkey } from "@/lib/texto";
 import type { VentaMes, VentaResumenFila, VentaTotales } from "@/lib/types/venta";
 import {
@@ -58,6 +58,9 @@ export function VentasPanel({
 }: Props) {
   const router = useRouter();
   const [periodo, setPeriodo] = useState(periodoInicial);
+  // Las ventas en COP y en USD se analizan por separado: nunca se suman entre sí.
+  const [moneda, setMoneda] = useState<Moneda>("COP");
+  const dinero = (n: number) => formatMoneda(n, moneda);
   const [pestana, setPestana] = useState<Pestana>("cliente");
   const [totales, setTotales] = useState(totalesIniciales);
   const [filas, setFilas] = useState(filasIniciales);
@@ -75,12 +78,12 @@ export function VentasPanel({
   const mesesOrdenados = [...meses].map((m) => m.mes).sort();
   const anios = [...new Set(mesesOrdenados.map((m) => m.slice(0, 4)))].sort().reverse();
 
-  const consultar = useCallback(async (p: string, por: Pestana) => {
+  const consultar = useCallback(async (p: string, por: Pestana, mon: Moneda) => {
     setCargando(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/ventas/resumen?periodo=${encodeURIComponent(p)}&por=${por}`,
+        `/api/ventas/resumen?periodo=${encodeURIComponent(p)}&por=${por}&moneda=${mon}`,
       );
       const json = (await res.json().catch(() => null)) as {
         totales?: VentaTotales;
@@ -103,13 +106,13 @@ export function VentasPanel({
   // Los datos iniciales ya vienen del servidor para «12m / cliente»; solo se vuelve a
   // consultar cuando el usuario cambia el período o la pestaña.
   useEffect(() => {
-    if (periodo === periodoInicial && pestana === "cliente") {
+    if (periodo === periodoInicial && pestana === "cliente" && moneda === "COP") {
       setTotales(totalesIniciales);
       setFilas(filasIniciales);
       return;
     }
-    void consultar(periodo, pestana);
-  }, [periodo, pestana, periodoInicial, totalesIniciales, filasIniciales, consultar]);
+    void consultar(periodo, pestana, moneda);
+  }, [periodo, pestana, moneda, periodoInicial, totalesIniciales, filasIniciales, consultar]);
 
   async function expandirCliente(cliente: string) {
     if (abierto === cliente) {
@@ -120,7 +123,7 @@ export function VentasPanel({
     setDetalle([]);
     try {
       const res = await fetch(
-        `/api/ventas/resumen?periodo=${encodeURIComponent(periodo)}&por=cliente&cliente=${encodeURIComponent(cliente)}`,
+        `/api/ventas/resumen?periodo=${encodeURIComponent(periodo)}&por=cliente&cliente=${encodeURIComponent(cliente)}&moneda=${moneda}`,
       );
       const json = (await res.json().catch(() => null)) as { filas?: VentaResumenFila[] } | null;
       setDetalle(json?.filas ?? []);
@@ -204,7 +207,8 @@ export function VentasPanel({
           mesesArchivo,
           existentes,
           desconocidos,
-          valor: subida.filas.reduce((a, r) => a + r.valor, 0),
+          valorCop: subida.filas.filter((r) => r.moneda === "COP").reduce((a, r) => a + r.valor, 0),
+          valorUsd: subida.filas.filter((r) => r.moneda === "USD").reduce((a, r) => a + r.valor, 0),
           clientes: new Set(subida.filas.map((r) => r.cliente)).size,
           excede: subida.filas.length > MAX_FILAS_CARGA,
         };
@@ -238,7 +242,8 @@ export function VentasPanel({
         >
           <b className="text-paramo-fg">Haz clic para elegir tu archivo</b>
           <span className="text-xs text-paramo-muted">
-            .xlsx, .xls o .csv con los encabezados de la plantilla
+            .xlsx, .xls o .csv con los encabezados de la plantilla. Columna opcional «Moneda»
+            (COP o USD; vacía = COP)
           </span>
           <input
             id="ventas-archivo"
@@ -263,7 +268,17 @@ export function VentasPanel({
               valor={String(previa.mesesArchivo.length)}
               texto={`${previa.mesesArchivo.length === 1 ? "mes" : "meses"}: ${previa.mesesArchivo.map(mesCorto).join(", ")}`}
             />
-            <Mini valor={formatCOP(previa.valor)} texto="valor total" />
+            <Mini
+              valor={
+                [
+                  previa.valorCop ? formatMoneda(previa.valorCop, "COP") : "",
+                  previa.valorUsd ? formatMoneda(previa.valorUsd, "USD") : "",
+                ]
+                  .filter(Boolean)
+                  .join(" + ") || formatMoneda(0, "COP")
+              }
+              texto="valor total"
+            />
             <Mini valor={String(previa.clientes)} texto="clientes" />
           </div>
           {subida.faltantes.length ? (
@@ -369,7 +384,8 @@ export function VentasPanel({
                 <th className="px-3 py-2">Mes</th>
                 <th className="px-3 py-2 text-right">Filas</th>
                 <th className="px-3 py-2 text-right">Unidades</th>
-                <th className="px-3 py-2 text-right">Valor</th>
+                <th className="px-3 py-2 text-right">Valor COP</th>
+                <th className="px-3 py-2 text-right">Valor USD</th>
                 <th className="px-3 py-2">Archivo</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -380,7 +396,10 @@ export function VentasPanel({
                   <td className="px-3 py-2 font-bold text-paramo-fg">{mesLargo(m.mes)}</td>
                   <td className="px-3 py-2 text-right">{fmtN(m.filas)}</td>
                   <td className="px-3 py-2 text-right">{fmtN(m.unidades)}</td>
-                  <td className="px-3 py-2 text-right">{formatCOP(m.valor)}</td>
+                  <td className="px-3 py-2 text-right">{formatMoneda(m.valor, "COP")}</td>
+                  <td className="px-3 py-2 text-right">
+                    {m.valor_usd ? formatMoneda(m.valor_usd, "USD") : "—"}
+                  </td>
                   <td className="px-3 py-2 text-xs text-paramo-muted">
                     {m.archivo}
                     <br />
@@ -457,11 +476,32 @@ export function VentasPanel({
               Análisis de ventas
             </h2>
             <span className="text-xs text-paramo-muted">
-              {formatCOP(total)} · {fmtN(unidades)} unidades · {fmtN(totales?.clientes ?? 0)}{" "}
+              {dinero(total)} · {fmtN(unidades)} unidades · {fmtN(totales?.clientes ?? 0)}{" "}
               clientes
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <div
+              role="group"
+              aria-label="Moneda del análisis"
+              className="inline-flex gap-1 rounded-full border border-paramo-line bg-paramo-surface p-1"
+            >
+              {MONEDAS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={moneda === m}
+                  onClick={() => setMoneda(m)}
+                  className={`min-h-9 rounded-full px-4 text-xs font-bold ${
+                    moneda === m
+                      ? "bg-paramo-brand text-paramo-brand-ink"
+                      : "text-paramo-muted hover:bg-paramo-surface-2"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
             <select
               aria-label="Período"
               value={periodo}
@@ -535,6 +575,7 @@ export function VentasPanel({
                         detalle={detalle}
                         maximo={maximo}
                         onToggle={() => expandirCliente(o.clave)}
+                        dinero={dinero}
                       />
                     );
                   })}
@@ -544,7 +585,7 @@ export function VentasPanel({
                     <td className="px-3 py-2">Total</td>
                     <td />
                     <td className="px-3 py-2 text-right">{fmtN(unidades)}</td>
-                    <td className="px-3 py-2 text-right">{formatCOP(total)}</td>
+                    <td className="px-3 py-2 text-right">{dinero(total)}</td>
                     <td className="px-3 py-2 text-right">100%</td>
                     <td />
                   </tr>
@@ -586,12 +627,12 @@ export function VentasPanel({
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right">{fmtN(o.unidades)}</td>
-                      <td className="px-3 py-2 text-right">{formatCOP(o.valor)}</td>
+                      <td className="px-3 py-2 text-right">{dinero(o.valor)}</td>
                       <td className="px-3 py-2 text-right">
                         {total ? ((o.valor / total) * 100).toFixed(1) : 0}%
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {o.unidades ? formatCOP(o.valor / o.unidades) : "—"}
+                        {o.unidades ? dinero(o.valor / o.unidades) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right">{fmtN(o.clientes)}</td>
                     </tr>
@@ -601,10 +642,10 @@ export function VentasPanel({
                   <tr className="border-t border-paramo-line font-bold text-paramo-fg">
                     <td className="px-3 py-2">Total</td>
                     <td className="px-3 py-2 text-right">{fmtN(unidades)}</td>
-                    <td className="px-3 py-2 text-right">{formatCOP(total)}</td>
+                    <td className="px-3 py-2 text-right">{dinero(total)}</td>
                     <td className="px-3 py-2 text-right">100%</td>
                     <td className="px-3 py-2 text-right">
-                      {unidades ? formatCOP(total / unidades) : "—"}
+                      {unidades ? dinero(total / unidades) : "—"}
                     </td>
                     <td />
                   </tr>
@@ -637,6 +678,7 @@ function FilaCliente({
   detalle,
   maximo,
   onToggle,
+  dinero,
 }: {
   o: VentaResumenFila;
   total: number;
@@ -644,6 +686,7 @@ function FilaCliente({
   detalle: VentaResumenFila[];
   maximo: number;
   onToggle: () => void;
+  dinero: (n: number) => string;
 }) {
   return (
     <>
@@ -666,7 +709,7 @@ function FilaCliente({
         </td>
         <td className="px-3 py-2 text-xs text-paramo-muted">{o.canal || "—"}</td>
         <td className="px-3 py-2 text-right">{fmtN(o.unidades)}</td>
-        <td className="px-3 py-2 text-right">{formatCOP(o.valor)}</td>
+        <td className="px-3 py-2 text-right">{dinero(o.valor)}</td>
         <td className="px-3 py-2 text-right">
           {total ? ((o.valor / total) * 100).toFixed(1) : 0}%
         </td>
@@ -687,7 +730,7 @@ function FilaCliente({
                       {x.etiqueta}{" "}
                       <span className="text-xs text-paramo-muted">· {fmtN(x.unidades)} u</span>
                     </span>
-                    <span className="text-sm font-bold text-paramo-fg">{formatCOP(x.valor)}</span>
+                    <span className="text-sm font-bold text-paramo-fg">{dinero(x.valor)}</span>
                     <span
                       className="col-span-2 block h-1 rounded-full bg-paramo-teal"
                       style={{ width: `${maximo ? (x.valor / maximo) * 100 : 0}%` }}

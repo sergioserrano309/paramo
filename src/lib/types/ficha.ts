@@ -1,4 +1,5 @@
 import type { EstadoCotizacion } from "@/config/cotizaciones";
+import type { Moneda } from "@/lib/precios";
 import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
 import type { ObservacionItem } from "@/lib/types/observacion";
 import type { ProspectoListItem } from "@/lib/types/prospecto";
@@ -18,6 +19,7 @@ export type CotizacionResumen = {
   fecha: string;
   desc_pct: number;
   total: number;
+  moneda: Moneda;
 };
 
 export type ProductoInteres = {

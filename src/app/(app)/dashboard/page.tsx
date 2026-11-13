@@ -7,7 +7,7 @@ import { cargarAprobaciones } from "@/lib/aprobaciones";
 import { can } from "@/lib/can";
 import { cargarDashboard, type DatosDashboard } from "@/lib/dashboard";
 import { textoFecha } from "@/lib/fechas";
-import { formatMoneyShort, todayBogota } from "@/lib/format";
+import { formatMoneyShort, formatMoneyShortMoneda, textoPorMoneda, todayBogota } from "@/lib/format";
 import { requireModuleAccess } from "@/lib/permissions";
 import { cargarTiposClientePrecio } from "@/lib/productos";
 import {
@@ -250,34 +250,49 @@ function DashboardCompleto({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi
-          etiqueta={`Ventas ${d.ref ? mesLargo(d.ref) : "del mes"}`}
-          valor={d.ref ? formatMoneyShort(d.ventasRef) : "—"}
-        >
-          {d.ref ? (
-            d.prev ? (
+        {(["COP", "USD"] as const).map((m) => (
+          <Kpi
+            key={`mes-${m}`}
+            etiqueta={`Ventas ${d.ref ? mesLargo(d.ref) : "del mes"} · ${m}`}
+            valor={d.ref ? formatMoneyShortMoneda(d.ventasRef[m], m) : "—"}
+          >
+            {d.ref ? (
+              d.prev ? (
+                <>
+                  <Delta valor={d.cambioMes[m]} /> vs {mesCorto(d.prev)}
+                </>
+              ) : (
+                "primer mes cargado"
+              )
+            ) : (
+              "Carga el Excel de ventas"
+            )}
+          </Kpi>
+        ))}
+        {(["COP", "USD"] as const).map((m) => (
+          <Kpi
+            key={`acum-${m}`}
+            etiqueta={`Acumulado ${d.anioRef} · ${m}`}
+            valor={d.ref ? formatMoneyShortMoneda(d.acumulado[m], m) : "—"}
+          >
+            {d.cambioAnio[m] !== null ? (
               <>
-                <Delta valor={d.cambioMes} /> vs {mesCorto(d.prev)}
+                <Delta valor={d.cambioAnio[m]} /> vs mismo periodo {Number(d.anioRef) - 1}
               </>
             ) : (
-              "primer mes cargado"
-            )
-          ) : (
-            "Carga el Excel de ventas"
-          )}
-        </Kpi>
-        <Kpi etiqueta={`Acumulado ${d.anioRef}`} valor={d.ref ? formatMoneyShort(d.acumulado) : "—"}>
-          {d.cambioAnio !== null ? (
-            <>
-              <Delta valor={d.cambioAnio} /> vs mismo periodo {Number(d.anioRef) - 1}
-            </>
-          ) : (
-            "sin año anterior para comparar"
-          )}
-        </Kpi>
-        <Kpi etiqueta="Pipeline ponderado" valor={formatMoneyShort(d.pipelinePonderado)}>
-          {d.prospectosActivos} prospectos activos · venta mensual × probabilidad
-        </Kpi>
+              "sin año anterior para comparar"
+            )}
+          </Kpi>
+        ))}
+        {(["COP", "USD"] as const).map((m) => (
+          <Kpi
+            key={`pipe-${m}`}
+            etiqueta={`Pipeline ponderado · ${m}`}
+            valor={formatMoneyShortMoneda(d.pipelinePonderado[m], m)}
+          >
+            {d.prospectosActivos} prospectos activos (COP y USD) · venta mensual × probabilidad
+          </Kpi>
+        ))}
         <Kpi etiqueta="Compromisos vencidos" valor={String(d.vencidos)} alerta={d.vencidos > 0}>
           {d.vencidos ? (
             <Link href="/compromisos" className={linkClass}>
@@ -359,7 +374,7 @@ function DashboardCompleto({
                     {e.cantidad}
                   </div>
                 </div>
-                <span className="text-xs font-bold text-paramo-fg">{formatMoneyShort(e.valor)}</span>
+                <span className="text-xs font-bold text-paramo-fg">{textoPorMoneda(e.valor)}</span>
               </li>
             ))}
           </ul>
@@ -372,17 +387,34 @@ function DashboardCompleto({
             Ventas mensuales
           </h2>
           <span className="text-xs text-paramo-muted">
-            COP, últimos {d.serie12.length || 12} meses cargados
+            COP y USD, últimos {d.serie12.length || 12} meses cargados
           </span>
           <Link href="/ventas" className={linkClass}>
             Detalle →
           </Link>
         </div>
         {d.serie12.length ? (
-          <BarChart
-            data={d.serie12.map((m) => ({ l: mesCorto(m.mes), v: m.valor }))}
-            label="Ventas mensuales"
-          />
+          <div className="space-y-4">
+            <div>
+              <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-paramo-muted">
+                COP
+              </h3>
+              <BarChart
+                data={d.serie12.map((m) => ({ l: mesCorto(m.mes), v: m.valor }))}
+                label="Ventas mensuales en COP"
+              />
+            </div>
+            <div>
+              <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-paramo-muted">
+                USD
+              </h3>
+              <BarChart
+                data={d.serie12.map((m) => ({ l: mesCorto(m.mes), v: m.valor_usd }))}
+                moneda="USD"
+                label="Ventas mensuales en USD"
+              />
+            </div>
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3 py-2 text-sm text-paramo-muted">
             <span>Sin ventas cargadas.</span>
@@ -402,27 +434,27 @@ function DashboardCompleto({
               <h2 className="mr-auto font-paramo-display text-lg font-bold text-paramo-fg">
                 Top clientes
               </h2>
-              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)}</span>
+              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)} · COP</span>
             </div>
-            <Top filas={d.topClientes} total={d.ventasRef} />
+            <Top filas={d.topClientes} total={d.ventasRef.COP} />
           </section>
           <section className={panelClass}>
             <div className="flex items-baseline gap-2">
               <h2 className="mr-auto font-paramo-display text-lg font-bold text-paramo-fg">
                 Top productos
               </h2>
-              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)}</span>
+              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)} · COP</span>
             </div>
-            <Top filas={d.topProductos} total={d.ventasRef} />
+            <Top filas={d.topProductos} total={d.ventasRef.COP} />
           </section>
           <section className={panelClass}>
             <div className="flex items-baseline gap-2">
               <h2 className="mr-auto font-paramo-display text-lg font-bold text-paramo-fg">
                 Mix por canal
               </h2>
-              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)}</span>
+              <span className="text-xs text-paramo-muted">{mesLargo(d.ref)} · COP</span>
             </div>
-            <Top filas={d.mixCanal} total={d.ventasRef} />
+            <Top filas={d.mixCanal} total={d.ventasRef.COP} />
           </section>
         </div>
       ) : null}
@@ -447,7 +479,7 @@ function DashboardCompleto({
                       {p.empresa}
                     </Link>
                     <div className="text-xs text-paramo-muted">
-                      {p.etapa} · {formatMoneyShort(p.valor)}/mes
+                      {p.etapa} · {formatMoneyShortMoneda(p.valor, p.moneda)}/mes
                     </div>
                   </div>
                   <span className="text-xs font-bold text-paramo-bad">{p.dias} días</span>

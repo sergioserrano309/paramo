@@ -1,3 +1,4 @@
+import type { Moneda } from "@/lib/precios";
 import { norm } from "@/lib/texto";
 
 /** Fila ya validada del Excel (as-is: [fecha, cliente, canal, ciudad, producto, unid., valor]). */
@@ -9,6 +10,8 @@ export type FilaVenta = {
   producto: string;
   unidades: number;
   valor: number;
+  /** Columna opcional «Moneda»; vacía = COP. */
+  moneda: Moneda;
 };
 
 export type VistaPreviaCarga = {
@@ -120,6 +123,7 @@ export async function leerArchivoVentas(file: File): Promise<VistaPreviaCarga> {
     producto: idx((h) => h.includes("producto") || h.includes("referencia")),
     unidades: idx((h) => h.includes("unidad") || h.includes("cantidad")),
     precio: idx((h) => h.includes("precio")),
+    moneda: idx((h) => h.includes("moneda") || h === "divisa"),
     valor: idx((h) => h.includes("valor") || h.includes("total") || h === "venta"),
   };
 
@@ -156,7 +160,16 @@ export async function leerArchivoVentas(file: File): Promise<VistaPreviaCarga> {
       const precio = parseNumero(g("precio"));
       if (valor === null && unidades !== null && precio !== null) valor = unidades * precio;
 
+      const monedaTxt = norm(g("moneda"));
+      const moneda: Moneda | null =
+        monedaTxt === "" || monedaTxt === "cop" || monedaTxt.startsWith("peso")
+          ? "COP"
+          : monedaTxt === "usd" || monedaTxt.startsWith("dolar") || monedaTxt === "us$"
+            ? "USD"
+            : null;
+
       const problemas: string[] = [];
+      if (!moneda) problemas.push("moneda (usa COP o USD)");
       if (!fecha || !fechaReal(fecha)) problemas.push("fecha");
       if (!cliente) problemas.push("cliente");
       if (!producto) problemas.push("producto");
@@ -174,7 +187,12 @@ export async function leerArchivoVentas(file: File): Promise<VistaPreviaCarga> {
         ciudad: String(g("ciudad") ?? "").trim(),
         producto,
         unidades: unidades as number,
-        valor: Math.round(valor as number),
+        // USD conserva centavos; COP va en pesos enteros.
+        valor:
+          moneda === "USD"
+            ? Math.round((valor as number) * 100) / 100
+            : Math.round(valor as number),
+        moneda: moneda as Moneda,
       });
     }
   }

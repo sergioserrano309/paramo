@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DESC_MAX } from "@/config/cotizaciones";
 import type { DatosAprobaciones } from "@/lib/aprobaciones";
-import { formatCOP } from "@/lib/precios";
+import { formatMoneda } from "@/lib/precios";
 
 const linkClass =
   "font-bold text-paramo-teal-ink underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-paramo-teal-soft";
@@ -30,10 +30,10 @@ export function PanelAprobaciones({ datos }: { datos: DatosAprobaciones }) {
         <section className="space-y-2 rounded-[10px] border border-paramo-warn bg-paramo-surface p-4">
           <div className="flex flex-wrap items-baseline gap-2">
             <h2 className="mr-auto font-paramo-display text-lg font-bold text-paramo-fg">
-              Descuentos por aprobar
+              Cotizaciones por aprobar
             </h2>
             <span className="text-xs text-paramo-muted">
-              cotizaciones con más del {DESC_MAX}% de descuento
+              con más del {DESC_MAX}% de descuento o precios cambiados a mano
             </span>
           </div>
           <ul className="divide-y divide-paramo-line">
@@ -44,11 +44,19 @@ export function PanelAprobaciones({ datos }: { datos: DatosAprobaciones }) {
                     {d.numero} · {d.cliente}
                   </div>
                   <div className="text-xs text-paramo-muted">
-                    {d.solicitante} solicita {d.descuento}%
+                    {d.solicitante} solicita{" "}
+                    {[
+                      d.descuento > DESC_MAX ? `${d.descuento}% de descuento` : "",
+                      d.precios_cambiados
+                        ? `${d.precios_cambiados} precio(s) cambiado(s)`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" y ") || `${d.descuento}%`}
                     {d.solicitado_en ? ` · ${fechaHora(d.solicitado_en)}` : ""}
                   </div>
                 </div>
-                <b className="text-paramo-fg">{formatCOP(d.total)}</b>
+                <b className="text-paramo-fg">{formatMoneda(d.total, d.moneda)}</b>
                 <Link href="/cotizaciones" className={linkClass}>
                   Revisar
                 </Link>
@@ -100,7 +108,7 @@ export function PanelAprobaciones({ datos }: { datos: DatosAprobaciones }) {
               Respuestas del supervisor
             </h2>
             <span className="text-xs text-paramo-muted">
-              descuentos aprobados o rechazados en tus cotizaciones
+              descuentos y precios aprobados o rechazados en tus cotizaciones
             </span>
           </div>
           <ul className="divide-y divide-paramo-line">
@@ -111,12 +119,16 @@ export function PanelAprobaciones({ datos }: { datos: DatosAprobaciones }) {
                     {r.numero} · {r.cliente}
                   </div>
                   <div className="text-xs text-paramo-muted">
-                    {r.rechazada
-                      ? `rechazó ${r.descuento}%`
-                      : `aprobó ${r.descuento}%`}
+                    {r.rechazada ? "rechazó" : "aprobó"}{" "}
+                    {[
+                      r.descuento > DESC_MAX ? `${r.descuento}% de descuento` : "",
+                      r.precios_cambiados ? `${r.precios_cambiados} precio(s) cambiado(s)` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" y ") || `${r.descuento}%`}
                   </div>
                 </div>
-                <b className="text-paramo-fg">{formatCOP(r.total)}</b>
+                <b className="text-paramo-fg">{formatMoneda(r.total, r.moneda)}</b>
                 <Link href="/cotizaciones" className={linkClass}>
                   Abrir
                 </Link>

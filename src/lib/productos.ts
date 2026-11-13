@@ -19,7 +19,7 @@ import type {
 
 export const PRODUCTO_SELECT = `
   id, nombre, sku, codigo, linea, presentacion, estado, precio_publico,
-  descripcion, precios, precios_pendientes, creado_en, actualizado_en
+  precio_publico_usd, descripcion, precios, precios_pendientes, creado_en, actualizado_en
 `;
 
 export const PRODUCTOS_LIMIT = 500;
@@ -33,6 +33,7 @@ export type ProductoRow = {
   presentacion: string;
   estado: string;
   precio_publico: number | string;
+  precio_publico_usd: number | string;
   descripcion: string;
   precios: unknown;
   precios_pendientes: unknown;
@@ -79,6 +80,7 @@ export function mapProductoRow(
     presentacion: row.presentacion ?? "",
     estado: isEstadoProducto(row.estado) ? row.estado : "desarrollo",
     precio_publico: Number(row.precio_publico) || 0,
+    precio_publico_usd: Number(row.precio_publico_usd) || 0,
     descripcion: row.descripcion ?? "",
     precios,
     precios_pendientes: pendientes,
@@ -176,7 +178,20 @@ const precioPropuesto = z
 
 export const productoCamposSchema = z.object({
   nombre: z.string().trim().min(1).max(200),
-  precio_publico: z.coerce.number().int().min(1).max(1_000_000_000),
+  // Basta con uno de los dos PVP (COP o USD); 0 = sin precio en esa moneda. Que al menos uno
+  // sea > 0 se valida abajo (`productoCamposSchema.refine`).
+  precio_publico: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? 0 : v),
+    z.coerce.number().int().min(0).max(1_000_000_000),
+  ),
+  precio_publico_usd: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? 0 : v),
+    z.coerce
+      .number()
+      .min(0)
+      .max(100_000_000)
+      .transform((n) => Math.round(n * 100) / 100),
+  ),
   linea: z.enum(LINEAS_PRODUCTO.map((l) => l.codigo) as [string, ...string[]]),
   estado: z.enum(ESTADOS_PRODUCTO.map((e) => e.codigo) as [string, ...string[]]),
   presentacion: optionalText(80),
@@ -184,6 +199,9 @@ export const productoCamposSchema = z.object({
   codigo: optionalText(80),
   descripcion: optionalText(2_000),
   precios: z.record(z.string().max(40), precioPropuesto),
+}).refine((c) => c.precio_publico > 0 || c.precio_publico_usd > 0, {
+  message: "pvp",
+  path: ["precio_publico"],
 });
 
 // ---------------------------------------------------------------------------

@@ -59,3 +59,11 @@ Sin migración propia: usa lo que crearon los demás módulos. Todo se calcula e
 
 - Filtro por responsable o por período en el Dashboard.
 - Proyección de ventas con el pipeline ponderado.
+
+## COP y USD (noviembre 2026)
+
+Ventas del mes, Acumulado y Pipeline ponderado son **tarjetas separadas por moneda**
+(COP y USD) con su propia variación; «Ventas mensuales» tiene una gráfica por moneda y cada
+etapa del Funnel muestra su valor por moneda. Top clientes, Top productos, Mix por canal y
+«Clientes que dejaron de comprar» siguen **solo en COP** (límite del hito). Compromisos no
+tienen monto.

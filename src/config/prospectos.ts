@@ -8,6 +8,9 @@ export const ACT_TIPOS = [
   "Reunión",
 ] as const;
 
+/** Código de la fuente «Otro» en `fuentes`: pide escribir cuál fue el canal. */
+export const FUENTE_OTRO = "otro";
+
 /** Entradas que el sistema escribe solo en el historial. */
 export const ACT_ETAPA = "Etapa";
 export const ACT_ESTADO = "Estado";

@@ -2,13 +2,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACT_ETAPA } from "@/config/prospectos";
 import { parseActividad } from "@/lib/actividad";
 import { sumarDias } from "@/lib/fechas";
-import { daysBetween, localDayBogota, todayBogota } from "@/lib/format";
+import {
+  daysBetween,
+  localDayBogota,
+  sumarPorMoneda,
+  todayBogota,
+  type PorMoneda,
+} from "@/lib/format";
+import { isMoneda, type Moneda } from "@/lib/precios";
 
 export type KpisSupervision = {
   contactos: number;
   empresasContactadas: number;
   prospectosNuevos: number;
-  valorNuevos: number;
+  valorNuevos: PorMoneda;
   avancesFunnel: number;
   ganados: number;
   comprometidos: number;
@@ -26,6 +33,7 @@ export type FilaCartera = {
   empresa: string;
   etapa: string;
   valor: number;
+  moneda: Moneda;
   diasSinContacto: number;
   /** Contactos registrados en el período (llamadas, visitas, correos…). */
   contactos: number;
@@ -81,7 +89,7 @@ export async function cargarSupervision(
   ] = await Promise.all([
     service
       .from("prospectos")
-      .select("valor_mensual_estimado")
+      .select("valor_mensual_estimado, valor_moneda")
       .gte("creado_en", desdeISO)
       .limit(5_000),
     service
@@ -134,7 +142,9 @@ export async function cargarSupervision(
     service.from("etapas_funnel").select("codigo, nombre, orden, en_pipeline"),
     service
       .from("prospectos")
-      .select("id, empresa, etapa_codigo, valor_mensual_estimado, ultimo_contacto, creado_en")
+      .select(
+        "id, empresa, etapa_codigo, valor_mensual_estimado, valor_moneda, ultimo_contacto, creado_en",
+      )
       .eq("activo", true)
       .limit(1_000),
     service
@@ -222,6 +232,7 @@ export async function cargarSupervision(
         empresa: p.empresa as string,
         etapa: etapas.get(p.etapa_codigo as string)?.nombre ?? (p.etapa_codigo as string),
         valor: Number(p.valor_mensual_estimado) || 0,
+        moneda: isMoneda(p.valor_moneda) ? p.valor_moneda : ("COP" as const),
         diasSinContacto: daysBetween(ultimo, hoy),
         contactos: contactosPorProspecto.get(p.id as string) ?? 0,
         proximo: proximos.get(p.id as string) ?? null,
@@ -240,9 +251,10 @@ export async function cargarSupervision(
       contactos,
       empresasContactadas: contactosPorProspecto.size,
       prospectosNuevos: (nuevosRes.data ?? []).length,
-      valorNuevos: (nuevosRes.data ?? []).reduce(
-        (a, p) => a + (Number(p.valor_mensual_estimado) || 0),
-        0,
+      valorNuevos: sumarPorMoneda(
+        nuevosRes.data ?? [],
+        (p) => Number(p.valor_mensual_estimado) || 0,
+        (p) => (isMoneda(p.valor_moneda) ? p.valor_moneda : "COP"),
       ),
       avancesFunnel: avances,
       ganados: ganadosRes.count ?? 0,

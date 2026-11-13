@@ -3,7 +3,15 @@ import type { Rol } from "@/config/roles";
 import { STALE_DAYS } from "@/config/funnel";
 import { fetchCompromisosAgenda } from "@/lib/compromisos";
 import { sumarDias } from "@/lib/fechas";
-import { daysBetween, localDayBogota, todayBogota } from "@/lib/format";
+import {
+  daysBetween,
+  localDayBogota,
+  sinMonto,
+  sumarPorMoneda,
+  todayBogota,
+  type PorMoneda,
+} from "@/lib/format";
+import { isMoneda, type Moneda } from "@/lib/precios";
 import { cargarObservaciones } from "@/lib/observaciones";
 import { cargarProductos } from "@/lib/productos";
 import type { CompromisoAgendaItem } from "@/lib/types/compromiso";
@@ -18,7 +26,8 @@ export type EtapaDashboard = {
   codigo: string;
   nombre: string;
   cantidad: number;
-  valor: number;
+  /** COP y USD por separado: no se suman entre sí. */
+  valor: PorMoneda;
 };
 
 export type ProspectoStale = {
@@ -26,6 +35,7 @@ export type ProspectoStale = {
   empresa: string;
   etapa: string;
   valor: number;
+  moneda: Moneda;
   dias: number;
 };
 
@@ -36,13 +46,13 @@ export type DatosDashboard = {
   /** Ventas: mes de referencia (el último cargado) y el anterior. */
   ref: string | null;
   prev: string | null;
-  ventasRef: number;
-  ventasPrev: number;
-  cambioMes: number | null;
+  ventasRef: PorMoneda;
+  ventasPrev: PorMoneda;
+  cambioMes: { COP: number | null; USD: number | null };
   anioRef: string;
-  acumulado: number;
-  cambioAnio: number | null;
-  pipelinePonderado: number;
+  acumulado: PorMoneda;
+  cambioAnio: { COP: number | null; USD: number | null };
+  pipelinePonderado: PorMoneda;
   prospectosActivos: number;
   vencidos: number;
   agenda: CompromisoAgendaItem[];
@@ -50,7 +60,7 @@ export type DatosDashboard = {
   funnel: EtapaDashboard[];
   ganados: number;
   perdidos: number;
-  serie12: Array<{ mes: string; valor: number }>;
+  serie12: Array<{ mes: string; valor: number; valor_usd: number }>;
   topClientes: VentaResumenFila[];
   topProductos: VentaResumenFila[];
   mixCanal: VentaResumenFila[];
@@ -78,7 +88,9 @@ export async function cargarDashboard(
   const ocultos = await filtroResponsablesOcultos(rol);
   let prospectosQ = service
     .from("prospectos")
-    .select("id, empresa, etapa_codigo, activo, valor_mensual_estimado, ultimo_contacto, creado_en")
+    .select(
+      "id, empresa, etapa_codigo, activo, valor_mensual_estimado, valor_moneda, ultimo_contacto, creado_en",
+    )
     .limit(2_000);
   if (ocultos) prospectosQ = prospectosQ.not("responsable_id", "in", ocultos);
 
@@ -108,30 +120,39 @@ export async function cargarDashboard(
 
   // ---- Ventas ----
   const ms = meses.map((m: VentaMes) => m.mes).sort();
-  const bm = new Map(meses.map((m) => [m.mes, m.valor]));
+  // Las ventas en COP y en USD se calculan por separado en cada indicador.
+  const bm = new Map(meses.map((m) => [m.mes, { COP: m.valor, USD: m.valor_usd }]));
+  const delMes = (m: string | null): PorMoneda => (m ? (bm.get(m) ?? sinMonto()) : sinMonto());
+  const sumaMeses = (lista: string[]): PorMoneda => {
+    const out = sinMonto();
+    for (const m of lista) {
+      out.COP += delMes(m).COP;
+      out.USD += delMes(m).USD;
+    }
+    return out;
+  };
+  const cambio = (a: PorMoneda, b: PorMoneda) => ({ COP: pct(a.COP, b.COP), USD: pct(a.USD, b.USD) });
   const ref = ms.length ? ms[ms.length - 1] : null;
   const prev = ms.length > 1 ? ms[ms.length - 2] : null;
-  const ventasRef = ref ? (bm.get(ref) ?? 0) : 0;
-  const ventasPrev = prev ? (bm.get(prev) ?? 0) : 0;
+  const ventasRef = delMes(ref);
+  const ventasPrev = delMes(prev);
   const anioRef = ref ? ref.slice(0, 4) : String(new Date().getFullYear());
-  const acumulado = ms
-    .filter((m) => m.startsWith(anioRef) && m <= (ref ?? "9"))
-    .reduce((a, m) => a + (bm.get(m) ?? 0), 0);
+  const acumulado = sumaMeses(ms.filter((m) => m.startsWith(anioRef) && m <= (ref ?? "9")));
   const pyMs = ms.filter(
     (m) => ref && m.startsWith(String(Number(anioRef) - 1)) && m.slice(5) <= ref.slice(5),
   );
-  const pyTotal = pyMs.reduce((a, m) => a + (bm.get(m) ?? 0), 0);
+  const pyTotal = sumaMeses(pyMs);
 
   // ---- Funnel y pipeline ----
   const vivos = prospectos.filter((p) => p.activo !== false);
   const pipelineCodigos = new Set(etapas.filter((e) => e.en_pipeline).map((e) => e.codigo as string));
   const activos = vivos.filter((p) => pipelineCodigos.has(p.etapa_codigo as string));
   const probabilidad = new Map(etapas.map((e) => [e.codigo as string, Number(e.probabilidad) || 0]));
-  const pipelinePonderado = activos.reduce(
-    (a, p) =>
-      a +
+  const pipelinePonderado = sumarPorMoneda(
+    activos,
+    (p) =>
       (Number(p.valor_mensual_estimado) || 0) * ((probabilidad.get(p.etapa_codigo as string) ?? 0) / 100),
-    0,
+    (p) => (isMoneda(p.valor_moneda) ? p.valor_moneda : "COP"),
   );
   const ganados = prospectos.filter((p) => p.etapa_codigo === "ganado").length;
   const perdidos = prospectos.filter((p) => p.etapa_codigo === "perdido").length;
@@ -143,7 +164,11 @@ export async function cargarDashboard(
       codigo: e.codigo as string,
       nombre: e.nombre as string,
       cantidad: ps.length,
-      valor: ps.reduce((a, p) => a + (Number(p.valor_mensual_estimado) || 0), 0),
+      valor: sumarPorMoneda(
+        ps,
+        (p) => Number(p.valor_mensual_estimado) || 0,
+        (p) => (isMoneda(p.valor_moneda) ? p.valor_moneda : "COP"),
+      ),
     };
   });
 
@@ -201,6 +226,7 @@ export async function cargarDashboard(
         empresa: p.empresa as string,
         etapa: nombreEtapa.get(p.etapa_codigo as string) ?? (p.etapa_codigo as string),
         valor: Number(p.valor_mensual_estimado) || 0,
+        moneda: isMoneda(p.valor_moneda) ? p.valor_moneda : ("COP" as const),
         dias: daysBetween(ultimo, hoy),
       };
     })
@@ -213,10 +239,10 @@ export async function cargarDashboard(
     prev,
     ventasRef,
     ventasPrev,
-    cambioMes: prev ? pct(ventasRef, ventasPrev) : null,
+    cambioMes: prev ? cambio(ventasRef, ventasPrev) : { COP: null, USD: null },
     anioRef,
     acumulado,
-    cambioAnio: pyMs.length ? pct(acumulado, pyTotal) : null,
+    cambioAnio: pyMs.length ? cambio(acumulado, pyTotal) : { COP: null, USD: null },
     pipelinePonderado,
     prospectosActivos: activos.length,
     vencidos,
@@ -225,7 +251,7 @@ export async function cargarDashboard(
     funnel,
     ganados,
     perdidos,
-    serie12: ms.slice(-12).map((m) => ({ mes: m, valor: bm.get(m) ?? 0 })),
+    serie12: ms.slice(-12).map((m) => ({ mes: m, valor: delMes(m).COP, valor_usd: delMes(m).USD })),
     topClientes,
     topProductos,
     mixCanal,
