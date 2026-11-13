@@ -62,7 +62,11 @@ export async function POST(request: Request) {
 
   const parsed = productoCamposSchema.safeParse(body.json);
   if (!parsed.success) {
-    return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
+    const sinPvp = parsed.error.issues.some((i) => i.message === "pvp");
+    return NextResponse.json(
+      { error: sinPvp ? "Escribe el PVP en COP, en USD o en ambos." : CREATE_DENIED },
+      { status: 422 },
+    );
   }
   const campos = parsed.data;
 
@@ -94,6 +98,7 @@ export async function POST(request: Request) {
     .insert({
       nombre: campos.nombre,
       precio_publico: campos.precio_publico,
+      precio_publico_usd: campos.precio_publico_usd,
       linea: campos.linea,
       estado: campos.estado,
       presentacion: campos.presentacion,

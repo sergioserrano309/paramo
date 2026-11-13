@@ -32,6 +32,8 @@ Detalle: [`.env.example`](../../.env.example).
 | `20261024090000_crear_ficha_prospecto.sql` | `prospecto_actividad`, `prospecto_productos` y `producto_feedback`. Validar al aplicar: el historial que escribe la app hoy está en `prospectos.actividad` |
 | `20261024180000_observaciones_prospecto_opcional.sql` | `observaciones.prospecto_id` pasa a ser opcional (nota de gestión general) |
 | `20261027090000_productos_codigo.sql` | Columna `productos.codigo` (Código, distinto del SKU) |
+| `20261113100000_moneda_en_prospectos_y_ventas.sql` | `prospectos.valor_moneda`, `ventas.moneda`; `ventas_por_mes.valor_usd`; `ventas_resumen` / `ventas_totales` con `p_moneda`; `cargar_ventas` lee `moneda` |
+| `20261113090000_precios_usd_y_moneda_cotizacion.sql` | `productos.precio_publico_usd`, `cotizaciones.moneda` (COP\|USD) y `cotizaciones.total` a 2 decimales; documenta `precio_lista` en `items` y `precios` en `aprobacion` |
 | `20261027091000_feedback_por_prospecto.sql` | `producto_feedback.prospecto_id` (nuevo) y `producto_id` admite null (= opinión «General») |
 | `20261023090000_crear_productos.sql` | Tabla `productos` (precios por tipo de cliente en `jsonb`, nombre único), RLS+revoke, trigger `actualizado_en`; aclara el comentario de `tipos_cliente.descuento_pct_default` |
 
@@ -44,6 +46,7 @@ Detalle: [`.env.example`](../../.env.example).
 | `002_catalogos_prospectos.sql` | Inserta canales, fuentes, tipos de cliente y etapas del as-is |
 | `003_productos.sql` | Inserta las 21 referencias del sitio (requiere la migración de productos) |
 | `004_canal_tipo_cliente.sql` | Asigna a cada canal su tipo de cliente por defecto (requiere la migración de cotizaciones) |
+| `006_canal_maquila.sql` | Canal «Maquila» (usa la lista de Distribuidor) |
 | `005_canales_nuevos.sql` | Reemplaza los canales por los 7 nuevos (con su lista de precios), pasa los prospectos al canal equivalente, desactiva los viejos y limpia `prospectos.tipo_cliente_codigo` |
 
 ## Tablas

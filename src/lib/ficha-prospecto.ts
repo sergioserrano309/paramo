@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isEstadoCotizacion } from "@/config/cotizaciones";
+import { isMoneda } from "@/lib/precios";
 import type { Rol } from "@/config/roles";
 import { parseActividad } from "@/lib/actividad";
 import { puedeVerCompromiso } from "@/lib/can";
@@ -54,7 +55,7 @@ export async function cargarFicha(
         .limit(100),
       service
         .from("cotizaciones")
-        .select("id, numero, estado, fecha, desc_pct, total")
+        .select("id, numero, estado, fecha, desc_pct, total, moneda")
         .eq("prospecto_id", id)
         .order("fecha", { ascending: false })
         .limit(100),
@@ -111,6 +112,7 @@ export async function cargarFicha(
       fecha: c.fecha as string,
       desc_pct: Number(c.desc_pct) || 0,
       total: Number(c.total) || 0,
+      moneda: isMoneda(c.moneda) ? c.moneda : ("COP" as const),
     })),
     productos: (productosRes.data ?? []).map((p) => ({
       id: p.id as string,

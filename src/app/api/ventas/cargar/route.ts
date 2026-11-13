@@ -4,7 +4,7 @@ import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
 import { registrarBitacora } from "@/lib/bitacora";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { clientKey, readJsonBody } from "@/lib/http";
-import { formatCOP } from "@/lib/precios";
+import { formatCOP, formatUSD } from "@/lib/precios";
 import { isAuthContext, requireApiPermission } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
@@ -36,6 +36,7 @@ const filaSchema = z.object({
   producto: z.string().trim().min(1).max(200),
   unidades: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
   valor: z.number().finite().min(-1_000_000_000_000).max(1_000_000_000_000),
+  moneda: z.enum(["COP", "USD"]).default("COP"),
 });
 
 const bodySchema = z.object({
@@ -84,7 +85,8 @@ export async function POST(request: Request) {
   }
 
   const meses = [...new Set(filas.map((f) => f.fecha.slice(0, 7)))].sort();
-  const total = filas.reduce((a, f) => a + f.valor, 0);
+  const totalCop = filas.filter((f) => f.moneda === "COP").reduce((a, f) => a + f.valor, 0);
+  const totalUsd = filas.filter((f) => f.moneda === "USD").reduce((a, f) => a + f.valor, 0);
 
   const creados: string[] = [];
   if (agregar_productos) {
@@ -123,7 +125,7 @@ export async function POST(request: Request) {
     service,
     auth,
     "Ventas cargadas",
-    `${archivo}: ${filas.length.toLocaleString("es-CO")} filas, ${meses.map(mesCorto).join(", ")}, ${formatCOP(total)}`,
+    `${archivo}: ${filas.length.toLocaleString("es-CO")} filas, ${meses.map(mesCorto).join(", ")}, ${[totalCop ? formatCOP(totalCop) : "", totalUsd ? formatUSD(totalUsd) : ""].filter(Boolean).join(" + ") || formatCOP(0)}`,
   );
 
   return NextResponse.json({

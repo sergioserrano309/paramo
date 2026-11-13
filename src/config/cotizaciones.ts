@@ -23,7 +23,7 @@ export const CAJAS = ["Tipo A", "Tipo B", "Tipo C"] as const;
 export const ESTADOS_COTIZACION = [
   { codigo: "borrador", nombre: "Borrador", tono: "muted" },
   { codigo: "pendiente", nombre: "Pendiente de aprobación", tono: "warn" },
-  { codigo: "rechazada", nombre: "Descuento rechazado", tono: "bad" },
+  { codigo: "rechazada", nombre: "Solicitud rechazada", tono: "bad" },
   { codigo: "final", nombre: "Lista para enviar", tono: "teal" },
   { codigo: "enviada", nombre: "Enviada al cliente", tono: "brand" },
   { codigo: "aceptada", nombre: "Aceptada", tono: "leaf" },

@@ -140,3 +140,35 @@ export function formatUltimoContacto(
   const label = dd === 0 ? "hoy" : `hace ${dd} d`;
   return { label, stale: false, days: dd };
 }
+
+/** Montos por moneda: COP y USD nunca se suman entre sí (no hay tasa de cambio). */
+export type PorMoneda = { COP: number; USD: number };
+
+export const sinMonto = (): PorMoneda => ({ COP: 0, USD: 0 });
+
+/** Suma `valor` de cada elemento en la bolsa de su moneda. */
+export function sumarPorMoneda<T>(
+  items: ReadonlyArray<T>,
+  valor: (x: T) => number,
+  moneda: (x: T) => "COP" | "USD",
+): PorMoneda {
+  const out = sinMonto();
+  for (const x of items) out[moneda(x)] += Number(valor(x)) || 0;
+  return out;
+}
+
+/** Como formatMoneyShort, pero en USD lleva el prefijo «USD» en lugar de «$». */
+export function formatMoneyShortMoneda(n: number, moneda: "COP" | "USD"): string {
+  if (moneda === "COP") return formatMoneyShort(n);
+  return "USD " + formatMoneyShort(n).replace("$", "");
+}
+
+/**
+ * «$1,2 M · USD 5 mil»: solo las monedas con monto. Si ambas están en cero, «$0».
+ */
+export function textoPorMoneda(m: PorMoneda): string {
+  const partes: string[] = [];
+  if (m.COP) partes.push(formatMoneyShort(m.COP));
+  if (m.USD) partes.push(formatMoneyShortMoneda(m.USD, "USD"));
+  return partes.length ? partes.join(" · ") : formatMoneyShort(0);
+}

@@ -82,6 +82,35 @@ se corrige y vuelve a intentar) → `enviada` → `aceptada` / `no_aceptada`. De
    «Ganado».
 5. Descargar PDF (borrador y final) y revisar `public.bitacora`.
 
+## Moneda y cambio manual de precios (noviembre 2026)
+
+**Desarrollado**
+
+- Botón **COP / USD** en la sección Productos de la cotización (`cotizaciones.moneda`). Los
+  precios de lista salen del PVP de esa moneda; cambiar la moneda restablece los precios de
+  lista. Totales, listado, PDF y paneles de aprobación usan la moneda de cada cotización
+  (USD con centavos; `total` pasó a `numeric(14,2)`). El KPI «Cotizado este mes» no mezcla
+  monedas: suma COP y USD por separado.
+- Si el producto no tiene precio en esa moneda la lista es **0** y el campo es editable. Con
+  precio 0 **no se puede generar la versión final** (UI y servidor); el borrador sí se guarda.
+- **Precio editable** por línea. El servidor recalcula el precio de catálogo (`precio_lista`
+  en cada línea de `items`) y lo compara con el escrito. Antes de generar la versión final, si
+  hay precios distintos al catálogo se muestra una ventana de confirmación con cada producto
+  (de $X a $Y).
+- **Aprobación del supervisor**: si el usuario es comercial y cambió precios (subir, bajar o
+  escribir uno cuando la lista es 0), la cotización queda «Pendiente de aprobación», igual
+  que un descuento > 5 %; una sola solicitud cubre descuento y precios. El supervisor aprueba
+  o rechaza todo, con comentario (`POST /api/cotizaciones/[id]/estado`). La aprobación guarda
+  `aprobacion.precios`; un precio ya aprobado no se vuelve a pedir si no cambia. Si el
+  supervisor cambia precios, quedan aprobados al generar la versión final (como su descuento).
+- El estado `rechazada` ahora se llama «Solicitud rechazada» (cubre descuento y precios).
+
+**Decisiones**: el cliente puede mandar un precio, pero el de catálogo siempre lo calcula el
+servidor; el historial por producto se deriva de las cotizaciones, sin tabla.
+
+**Novedad operativa**: aplicar la migración **antes** de desplegar (el código lee las columnas
+nuevas).
+
 ## Archivos clave
 
 - `supabase/migrations/20261023110000_crear_cotizaciones.sql`, `supabase/seed/004_canal_tipo_cliente.sql`

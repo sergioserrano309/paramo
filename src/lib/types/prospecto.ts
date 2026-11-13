@@ -1,4 +1,5 @@
 import type { Rol } from "@/config/roles";
+import type { Moneda } from "@/lib/precios";
 import type { ActividadItem } from "@/lib/actividad";
 
 export type CatalogoItem = {
@@ -34,6 +35,8 @@ export type ProspectoListItem = {
   etapa_codigo: string;
   etapa_nombre: string;
   valor_mensual_estimado: number;
+  /** Moneda de la venta mensual estimada. */
+  valor_moneda: Moneda;
   calificacion: number;
   notas: string;
   activo: boolean;

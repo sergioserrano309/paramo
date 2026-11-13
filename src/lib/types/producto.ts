@@ -27,7 +27,10 @@ export type ProductoListItem = {
   linea: LineaProducto;
   presentacion: string;
   estado: EstadoProducto;
+  /** PVP en COP; 0 = sin precio en pesos. */
   precio_publico: number;
+  /** PVP en USD; 0 = sin precio en dólares. */
+  precio_publico_usd: number;
   descripcion: string;
   precios: PreciosProducto;
   precios_pendientes: PreciosPendientes;

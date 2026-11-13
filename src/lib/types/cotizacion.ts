@@ -1,4 +1,5 @@
 import type { EstadoCotizacion, Pago } from "@/config/cotizaciones";
+import type { Moneda } from "@/lib/precios";
 
 export type CotizacionItem = {
   producto_id: string | null;
@@ -6,8 +7,17 @@ export type CotizacionItem = {
   presentacion: string;
   caja: string;
   cant: number;
+  /** Precio unitario cotizado, en la moneda de la cotización. */
   precio: number;
+  /**
+   * Precio del catálogo al cotizar (snapshot). Si difiere de `precio`, el comercial lo
+   * cambió a mano. null = cotización anterior a este campo: no se considera cambiada.
+   */
+  precio_lista: number | null;
 };
+
+/** Precio de una línea que el supervisor aprobó (producto + precio cotizado). */
+export type PrecioAprobado = { producto_id: string; precio: number };
 
 export type DecisionDescuento = {
   por: string;
@@ -17,7 +27,11 @@ export type DecisionDescuento = {
   comentario: string;
 };
 
-export type AprobacionDescuento = DecisionDescuento & { desc: number };
+export type AprobacionDescuento = DecisionDescuento & {
+  desc: number;
+  /** Cambios de precio aprobados en la misma decisión (vacío si solo era descuento). */
+  precios: PrecioAprobado[];
+};
 
 export type CotizacionListItem = {
   id: string;
@@ -27,6 +41,7 @@ export type CotizacionListItem = {
   cliente_nombre: string;
   tipo_cliente_codigo: string | null;
   fecha: string;
+  moneda: Moneda;
   validez_dias: number;
   pago: Pago;
   entrega: string;

@@ -10,7 +10,7 @@ import {
 } from "@/components/ObservacionesLista";
 import type { EventoBitacora } from "@/lib/bitacora-consulta";
 import { fechaCorta, textoFecha } from "@/lib/fechas";
-import { formatMoneyShort, localDayBogota } from "@/lib/format";
+import { formatMoneyShortMoneda, localDayBogota, textoPorMoneda } from "@/lib/format";
 import type { DatosSupervision } from "@/lib/supervision";
 import type { ObservacionItem } from "@/lib/types/observacion";
 import type { TipoClientePrecio } from "@/lib/types/producto";
@@ -206,7 +206,7 @@ export function SupervisionPanel({
               valor={String(k.prospectosNuevos)}
               pie={
                 k.prospectosNuevos
-                  ? `${formatMoneyShort(k.valorNuevos)}/mes potencial`
+                  ? `${textoPorMoneda(k.valorNuevos)}/mes potencial`
                   : "ninguno en el período"
               }
             />
@@ -326,7 +326,7 @@ export function SupervisionPanel({
                         </td>
                         <td className="px-3 py-2">{p.etapa}</td>
                         <td className="px-3 py-2 text-right">
-                          {p.valor ? formatMoneyShort(p.valor) : "—"}
+                          {p.valor ? formatMoneyShortMoneda(p.valor, p.moneda) : "—"}
                         </td>
                         <td
                           className={`px-3 py-2 text-right ${

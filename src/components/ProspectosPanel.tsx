@@ -1,5 +1,10 @@
 "use client";
 
+import { FUENTE_OTRO } from "@/config/prospectos";
+import { ValorEstimadoInput } from "@/components/ValorEstimadoInput";
+import { formatMoneyShortMoneda } from "@/lib/format";
+import type { Moneda } from "@/lib/precios";
+
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { CompromisoFechaText } from "@/components/CompromisoFechaText";
@@ -10,11 +15,9 @@ import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { STALE_DAYS } from "@/config/funnel";
 import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
-import { InputMoneda } from "@/components/InputMoneda";
 import { canAsignarResponsable, canEditProspecto } from "@/lib/can";
 import { cn } from "@/lib/cn";
 import {
-  formatMoneyShort,
   formatUltimoContacto,
   todayBogota,
 } from "@/lib/format";
@@ -48,8 +51,10 @@ type FormState = {
   ciudad: string;
   canal_codigo: string;
   fuente_codigo: string;
+  fuente_otro: string;
   etapa_codigo: string;
   valor_mensual_estimado: string;
+  valor_moneda: Moneda;
   calificacion: string;
   notas: string;
   responsable_id: string;
@@ -76,8 +81,10 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
     ciudad: "",
     canal_codigo: "",
     fuente_codigo: "",
+    fuente_otro: "",
     etapa_codigo: etapaDefault,
     valor_mensual_estimado: "",
+    valor_moneda: "COP",
     calificacion: "0",
     notas: "",
     responsable_id: defaultResponsableId,
@@ -291,6 +298,7 @@ export function ProspectosPanel({
         ciudad: "",
         fuente_codigo: null,
         valor_mensual_estimado: 0,
+        valor_moneda: "COP",
         calificacion: 0,
         notas: "",
       });
@@ -331,8 +339,10 @@ export function ProspectosPanel({
         ciudad: form.ciudad,
         canal_codigo: form.canal_codigo || null,
         fuente_codigo: form.fuente_codigo || null,
+        fuente_otro: form.fuente_codigo === FUENTE_OTRO ? form.fuente_otro.trim() : "",
         etapa_codigo: form.etapa_codigo || etapaDefault,
         valor_mensual_estimado: Number(form.valor_mensual_estimado) || 0,
+        valor_moneda: form.valor_moneda,
         calificacion: Number(form.calificacion) || 0,
         notas: form.notas,
         responsable_id: form.responsable_id || defaultResponsableId,
@@ -714,7 +724,7 @@ export function ProspectosPanel({
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums text-paramo-fg">
                         {p.valor_mensual_estimado
-                          ? formatMoneyShort(p.valor_mensual_estimado)
+                          ? formatMoneyShortMoneda(p.valor_mensual_estimado, p.valor_moneda)
                           : "—"}
                       </td>
                       <td className="px-3 py-3">
@@ -778,7 +788,7 @@ export function ProspectosPanel({
                     </span>
                     <span>
                       {p.valor_mensual_estimado
-                        ? formatMoneyShort(p.valor_mensual_estimado)
+                        ? formatMoneyShortMoneda(p.valor_mensual_estimado, p.valor_moneda)
                         : ""}
                     </span>
                   </div>
@@ -1035,14 +1045,32 @@ export function ProspectosPanel({
                     ))}
                   </select>
                 </div>
+                {form.fuente_codigo === FUENTE_OTRO && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <label htmlFor="dp-fuente-otro" className={labelClass}>
+                      ¿Cuál canal? *
+                    </label>
+                    <input
+                      id="dp-fuente-otro"
+                      required
+                      maxLength={80}
+                      value={form.fuente_otro}
+                      onChange={(e) => setField("fuente_otro", e.target.value)}
+                      placeholder="Ej.: Alianza con gimnasios"
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label htmlFor="dp-valor" className={labelClass}>
-                    Venta mensual estimada (COP)
+                    Venta mensual estimada
                   </label>
-                  <InputMoneda
+                  <ValorEstimadoInput
                     id="dp-valor"
-                    value={form.valor_mensual_estimado}
-                    onValueChange={(v) => setField("valor_mensual_estimado", v)}
+                    moneda={form.valor_moneda}
+                    valor={form.valor_mensual_estimado}
+                    onMoneda={(m) => setField("valor_moneda", m)}
+                    onValor={(v) => setField("valor_mensual_estimado", v)}
                     className={fieldClass}
                   />
                 </div>

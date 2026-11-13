@@ -19,6 +19,9 @@ import {
 } from "@/lib/prospectos";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
+import { FUENTE_OTRO } from "@/config/prospectos";
+import { redondearMoneda } from "@/lib/precios";
+import { fuenteOtroSchema, resolverFuenteOtro } from "@/lib/fuentes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_BODY_BYTES = 16_384;
@@ -53,6 +56,9 @@ const datosSchema = z.object({
   ciudad: optionalText(120),
   canal_codigo: optionalCodigo,
   fuente_codigo: optionalCodigo,
+  // Solo aplica si fuente_codigo es «Otro». Vacío conserva «Otro» (prospectos anteriores).
+  fuente_otro: fuenteOtroSchema,
+  valor_moneda: z.enum(["COP", "USD"]).default("COP"),
   valor_mensual_estimado: z.preprocess(
     (v) => (v === null || v === undefined || v === "" ? 0 : v),
     z.coerce.number().min(0).max(1_000_000_000_000),
@@ -179,6 +185,13 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!(await codigoActivo(service, "fuentes", body.fuente_codigo))) {
       return NextResponse.json({ error: DENIED }, { status: 422 });
     }
+    let fuenteCodigo = body.fuente_codigo;
+    if (fuenteCodigo === FUENTE_OTRO && body.fuente_otro) {
+      fuenteCodigo = await resolverFuenteOtro(service, body.fuente_otro);
+      if (!fuenteCodigo) {
+        return NextResponse.json({ error: DENIED }, { status: 500 });
+      }
+    }
     Object.assign(patch, {
       empresa: body.empresa,
       nit: body.nit,
@@ -190,8 +203,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       canal_codigo: body.canal_codigo,
       // El canal define la lista de precios; el tipo propio del prospecto ya no se usa.
       tipo_cliente_codigo: null,
-      fuente_codigo: body.fuente_codigo,
-      valor_mensual_estimado: body.valor_mensual_estimado,
+      fuente_codigo: fuenteCodigo,
+      valor_mensual_estimado: redondearMoneda(body.valor_mensual_estimado, body.valor_moneda),
+      valor_moneda: body.valor_moneda,
       notas: body.notas,
     });
   } else if (body.accion === "calificacion") {

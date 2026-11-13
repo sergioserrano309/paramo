@@ -1,10 +1,13 @@
 "use client";
 
+import { FUENTE_OTRO } from "@/config/prospectos";
+import { ValorEstimadoInput } from "@/components/ValorEstimadoInput";
+import type { Moneda } from "@/lib/precios";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { estadoCotizacion } from "@/config/cotizaciones";
-import { formatCOP } from "@/lib/precios";
+import { formatMoneda } from "@/lib/precios";
 import type { CotizacionResumen, ProductoInteres } from "@/lib/types/ficha";
 import { TIPOS_ACTIVIDAD } from "@/lib/actividad";
 import { CALIF_TXT } from "@/config/calificacion";
@@ -16,7 +19,6 @@ import {
 } from "@/config/compromisos";
 import { ROL_LABEL, type Rol } from "@/config/roles";
 import { can, canAsignarResponsable, canCreateCompromiso } from "@/lib/can";
-import { InputMoneda } from "@/components/InputMoneda";
 import { cn } from "@/lib/cn";
 import {
   addDaysYmd,
@@ -63,7 +65,9 @@ type DatosForm = {
   ciudad: string;
   canal_codigo: string;
   fuente_codigo: string;
+  fuente_otro: string;
   valor: string;
+  valor_moneda: Moneda;
   notas: string;
 };
 
@@ -96,7 +100,9 @@ function datosFrom(p: ProspectoListItem): DatosForm {
     ciudad: p.ciudad,
     canal_codigo: p.canal_codigo ?? "",
     fuente_codigo: p.fuente_codigo ?? "",
+    fuente_otro: "",
     valor: String(p.valor_mensual_estimado || 0),
+    valor_moneda: p.valor_moneda,
     notas: p.notas,
   };
 }
@@ -747,7 +753,7 @@ export function ProspectoDetalleDrawer({
                       </span>
                     </span>
                     <span className="shrink-0 text-sm font-bold text-paramo-fg">
-                      {formatCOP(c.total)}
+                      {formatMoneda(c.total, c.moneda)}
                     </span>
                   </li>
                 ))}
@@ -948,7 +954,10 @@ export function ProspectoDetalleDrawer({
                   ciudad: form.ciudad,
                   canal_codigo: form.canal_codigo || null,
                   fuente_codigo: form.fuente_codigo || null,
+                  fuente_otro:
+                    form.fuente_codigo === FUENTE_OTRO ? form.fuente_otro.trim() : "",
                   valor_mensual_estimado: form.valor ? Number(form.valor) : 0,
+                  valor_moneda: form.valor_moneda,
                   notas: form.notas,
                 }),
               );
@@ -1047,11 +1056,28 @@ export function ProspectoDetalleDrawer({
                 ))}
               </select>
             </Field>
-            <Field label="Venta mensual estimada (COP)">
-              <InputMoneda
+            {form.fuente_codigo === FUENTE_OTRO && (
+              <Field label="¿Cuál canal? (opcional)">
+                <input
+                  disabled={!canEdit || busy}
+                  maxLength={80}
+                  value={form.fuente_otro}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, fuente_otro: e.target.value }))
+                  }
+                  placeholder="Ej.: Alianza con gimnasios"
+                  className={fieldClass}
+                />
+              </Field>
+            )}
+            <Field label="Venta mensual estimada">
+              <ValorEstimadoInput
+                id="dr-valor"
                 disabled={!canEdit || busy}
-                value={form.valor}
-                onValueChange={(v) => setForm((f) => ({ ...f, valor: v }))}
+                moneda={form.valor_moneda}
+                valor={form.valor}
+                onMoneda={(m) => setForm((f) => ({ ...f, valor_moneda: m }))}
+                onValor={(v) => setForm((f) => ({ ...f, valor: v }))}
                 className={fieldClass}
               />
             </Field>

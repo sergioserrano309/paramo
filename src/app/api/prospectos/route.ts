@@ -17,6 +17,9 @@ import {
   type ProspectoRow,
 } from "@/lib/prospectos";
 import { createServiceClient } from "@/lib/supabase-server";
+import { FUENTE_OTRO } from "@/config/prospectos";
+import { redondearMoneda } from "@/lib/precios";
+import { fuenteOtroSchema, resolverFuenteOtro } from "@/lib/fuentes";
 import { filtroResponsablesOcultos } from "@/lib/visibilidad";
 
 const MAX_BODY_BYTES = 16_384;
@@ -56,6 +59,8 @@ const createProspectoSchema = z.object({
   ciudad: optionalText(120),
   canal_codigo: optionalCodigo,
   fuente_codigo: optionalCodigo,
+  // Solo aplica si fuente_codigo es «Otro»: el canal escrito a mano.
+  fuente_otro: fuenteOtroSchema,
   etapa_codigo: z
     .union([z.string(), z.null(), z.undefined()])
     .transform((v) => {
@@ -63,6 +68,7 @@ const createProspectoSchema = z.object({
       return v.trim().slice(0, 40);
     }),
   valor_mensual_estimado: optionalNonNegNumber(1_000_000_000_000),
+  valor_moneda: z.enum(["COP", "USD"]).default("COP"),
   calificacion: z.preprocess(
     (v) => (v === null || v === undefined || v === "" ? 0 : v),
     z.coerce.number().int().min(0).max(3),
@@ -195,6 +201,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
   }
 
+  // «Otro» exige decir cuál: se crea (o reutiliza) esa opción en el catálogo de fuentes.
+  let fuenteCodigo = body.fuente_codigo;
+  if (fuenteCodigo === FUENTE_OTRO) {
+    if (!body.fuente_otro) {
+      return NextResponse.json({ error: CREATE_DENIED }, { status: 422 });
+    }
+    fuenteCodigo = await resolverFuenteOtro(service, body.fuente_otro);
+    if (!fuenteCodigo) {
+      return NextResponse.json({ error: CREATE_DENIED }, { status: 500 });
+    }
+  }
+
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Bogota",
   });
@@ -210,9 +228,10 @@ export async function POST(request: Request) {
       email: body.email,
       ciudad: body.ciudad,
       canal_codigo: body.canal_codigo,
-      fuente_codigo: body.fuente_codigo,
+      fuente_codigo: fuenteCodigo,
       etapa_codigo: body.etapa_codigo,
-      valor_mensual_estimado: body.valor_mensual_estimado,
+      valor_mensual_estimado: redondearMoneda(body.valor_mensual_estimado, body.valor_moneda),
+      valor_moneda: body.valor_moneda,
       calificacion: body.calificacion,
       notas: body.notas,
       activo: true,

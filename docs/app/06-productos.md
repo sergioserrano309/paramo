@@ -95,6 +95,26 @@ precios devuelven un mensaje accionable (422); los de permisos, el 401/403 unifo
 - `src/lib/bitacora.ts`, `src/lib/http.ts`, `src/lib/types/producto.ts`
 - `src/config/productos.ts`
 
+## Precio en USD e historial de cambios en cotización (noviembre 2026)
+
+**Desarrollado**
+
+- Producto con **dos PVP**: COP (`precio_publico`) y USD (`precio_publico_usd`,
+  migración `20261113090000_precios_usd_y_moneda_cotizacion.sql`). Basta con uno de los dos
+  (mínimo uno > 0, validado en la API); lo ideal es diligenciar ambos.
+- Precios por tipo de cliente en USD: el mismo **% sobre el PVP USD**. Un «precio fijo» está
+  en COP y no se convierte: en USD usa la lista general. La tabla de precios muestra el
+  resultante en COP y en USD (`precioParaTipo(..., moneda)` en `src/lib/precios.ts`, el mismo
+  cálculo de la cotización).
+- Sección «Historial de cambios en cotización» en la ficha del producto (bajo «Precios por
+  tipo de cliente»): cotizaciones (número, cliente, precio cotizado, precio de catálogo,
+  fecha, «por aprobar» si aplica) donde el comercial cambió el precio del producto. Se deriva
+  de `cotizaciones.items` (`precio` ≠ `precio_lista`) en `GET /api/productos/[id]/seguimiento`
+  (`cambios_precio`), respetando la visibilidad del comercial; sin tabla de historial.
+
+**Decisiones**: sin tasa de cambio ni conversión automática (el negocio define cada precio);
+campos en columnas existentes (AGENTS §3.2).
+
 ## Fuera de alcance (siguientes hitos)
 
 - «Seguimiento» de la ficha **completo**: ventas a 12 meses, clientes que compran, serie

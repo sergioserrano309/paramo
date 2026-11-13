@@ -1,4 +1,4 @@
-import { estaBloqueada } from "@/config/cotizaciones";
+import { DESC_MAX, estaBloqueada } from "@/config/cotizaciones";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AUTH_UNAUTHORIZED_BODY } from "@/lib/auth-errors";
@@ -11,11 +11,11 @@ import {
   cargarProspectosCotizables,
   puedeEditarCotizacion,
 } from "@/lib/cotizaciones";
-import { calcularTotales } from "@/lib/cotizaciones-calculo";
+import { calcularTotales, lineasConPrecioCambiado } from "@/lib/cotizaciones-calculo";
 import { hasSupabaseServiceConfig } from "@/lib/env";
 import { todayBogota } from "@/lib/format";
 import { clientKey, readJsonBody } from "@/lib/http";
-import { formatCOP } from "@/lib/precios";
+import { formatMoneda } from "@/lib/precios";
 import { isAuthContext, requireApiModuleAccess } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase-server";
@@ -43,6 +43,17 @@ const bodySchema = z.object({
 });
 
 type RouteParams = { params: Promise<{ id: string }> };
+
+/** Etiqueta de bitácora de la decisión del supervisor: descuento, precios o ambos. */
+function textoDecision(
+  verbo: "aprobado" | "rechazado",
+  descuento: boolean,
+  precios: boolean,
+): string {
+  const que = descuento && precios ? "Descuento y precios" : precios ? "Precios" : "Descuento";
+  const plural = que === "Descuento" ? verbo : verbo === "aprobado" ? "aprobados" : "rechazados";
+  return `${que} ${plural}`;
+}
 
 type Transicion = {
   patch: Record<string, unknown>;
@@ -155,7 +166,12 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (accion === "aprobar" && cot.estado === "pendiente") {
     const sol = cot.desc_solicitado ?? cot.desc_pct;
     const dv = Math.max(0, Math.min(descuento ?? sol, sol));
-    const totales = calcularTotales(cot.items, dv, cot.iva_pct);
+    const totales = calcularTotales(cot.items, dv, cot.iva_pct, cot.moneda);
+    // Los precios que el comercial cambió a mano quedan aprobados con el descuento.
+    const preciosAprobados = lineasConPrecioCambiado(cot.items).flatMap((l) =>
+      l.producto_id ? [{ producto_id: l.producto_id, precio: l.precio }] : [],
+    );
+    const pidioDescuento = sol > DESC_MAX;
     t = {
       patch: {
         desc_pct: dv,
@@ -163,27 +179,35 @@ export async function POST(request: Request, { params }: RouteParams) {
         estado: "final",
         version: cot.version + 1,
         final_en: ahoraISO,
-        aprobacion: { por: auth.userId, en: ahoraISO, desc: dv, solicitado: sol, comentario },
+        aprobacion: {
+          por: auth.userId,
+          en: ahoraISO,
+          desc: dv,
+          solicitado: sol,
+          comentario,
+          precios: preciosAprobados,
+        },
         rechazo: null,
       },
-      accion: "Descuento aprobado",
-      detalle: `${etiqueta} · ${dv}%${dv !== sol ? ` (solicitado ${sol}%)` : ""}${comentario ? " · " + comentario : ""}`,
+      accion: textoDecision("aprobado", pidioDescuento, preciosAprobados.length > 0),
+      detalle: `${etiqueta} · ${dv}%${dv !== sol ? ` (solicitado ${sol}%)` : ""}${preciosAprobados.length ? ` · ${preciosAprobados.length} precio(s) cambiado(s)` : ""}${comentario ? " · " + comentario : ""}`,
     };
   } else if (accion === "rechazar" && cot.estado === "pendiente") {
     const sol = cot.desc_solicitado ?? cot.desc_pct;
+    const nPrecios = lineasConPrecioCambiado(cot.items).length;
     t = {
       patch: {
         estado: "rechazada",
         rechazo: { por: auth.userId, en: ahoraISO, solicitado: sol, comentario },
       },
-      accion: "Descuento rechazado",
-      detalle: `${etiqueta} · ${sol}%${comentario ? " · " + comentario : ""}`,
+      accion: textoDecision("rechazado", sol > DESC_MAX, nPrecios > 0),
+      detalle: `${etiqueta} · ${sol}%${nPrecios ? ` · ${nPrecios} precio(s) cambiado(s)` : ""}${comentario ? " · " + comentario : ""}`,
     };
   } else if (accion === "enviar" && cot.estado === "final") {
     t = {
       patch: { estado: "enviada", enviada_en: ahoraISO },
       accion: "Cotización enviada",
-      detalle: `${etiqueta} · ${formatCOP(cot.total)}`,
+      detalle: `${etiqueta} · ${formatMoneda(cot.total, cot.moneda)}`,
       efecto: async () => {
         if (!prospecto || !prospecto.activo) return;
         const orden = await ordenEtapas(service);
@@ -216,7 +240,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     t = {
       patch: { estado: "aceptada", cerrada_en: ahoraISO },
       accion: "Cotización aceptada",
-      detalle: `${etiqueta} · ${formatCOP(cot.total)}`,
+      detalle: `${etiqueta} · ${formatMoneda(cot.total, cot.moneda)}`,
       efecto: async () => {
         if (!prospecto || prospecto.etapa_codigo === "ganado") return;
         await cambiarEtapaProspecto(

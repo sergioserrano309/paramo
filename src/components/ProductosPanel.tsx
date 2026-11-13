@@ -13,6 +13,7 @@ import Link from "next/link";
 import { InputMoneda } from "@/components/InputMoneda";
 import { formatMoneyShort } from "@/lib/format";
 import type {
+  CambioPrecioCotizacion,
   InteresadoProducto,
   OpinionProducto,
   ResumenSeguimiento,
@@ -21,9 +22,10 @@ import { pkey } from "@/lib/texto";
 import { mesCorto } from "@/lib/ventas-periodo";
 import {
   formatCOP,
+  formatMoneda,
+  formatUSD,
   normalizarPrecio,
-  precioDesdeDefinicion,
-  precioListaGeneral,
+  precioParaTipo,
   textoPrecio,
 } from "@/lib/precios";
 import type {
@@ -59,6 +61,8 @@ type PrecioForm = { modo: ModoPrecio; v: string };
 type FormState = {
   nombre: string;
   precio_publico: string;
+  /** Dólares con «.» decimal (p. ej. «4.5»). */
+  precio_publico_usd: string;
   linea: string;
   estado: string;
   presentacion: string;
@@ -115,6 +119,7 @@ function formVacio(tipos: TipoClientePrecio[]): FormState {
   return {
     nombre: "",
     precio_publico: "",
+    precio_publico_usd: "",
     linea: "frutas",
     estado: "desarrollo",
     presentacion: "",
@@ -145,6 +150,7 @@ function formDesdeProducto(
     ...base,
     nombre: p.nombre,
     precio_publico: String(p.precio_publico || ""),
+    precio_publico_usd: String(p.precio_publico_usd || ""),
     linea: p.linea,
     estado: p.estado,
     presentacion: p.presentacion,
@@ -180,6 +186,7 @@ export function ProductosPanel({
   const [opinionesData, setOpinionesData] = useState<{
     interesados: InteresadoProducto[];
     opiniones: OpinionProducto[];
+    cambios_precio: CambioPrecioCotizacion[];
   } | null>(null);
 
   // Llegada con `?abrir=ID` (bitácora, ventas…): abre la ficha de ese producto.
@@ -301,6 +308,7 @@ export function ProductosPanel({
     return {
       nombre: form.nombre.trim(),
       precio_publico: Number(form.precio_publico) || 0,
+      precio_publico_usd: Number(form.precio_publico_usd) || 0,
       linea: form.linea,
       estado: form.estado,
       presentacion: form.presentacion,
@@ -341,8 +349,8 @@ export function ProductosPanel({
       setError("Escribe el nombre del producto.");
       return;
     }
-    if (!(data.precio_publico > 0)) {
-      setError("Escribe el PVP del producto.");
+    if (!(data.precio_publico > 0) && !(data.precio_publico_usd > 0)) {
+      setError("Escribe el PVP del producto en COP, en USD o en ambos.");
       return;
     }
 
@@ -444,6 +452,7 @@ export function ProductosPanel({
   }, [productos, filtroEstado, q]);
 
   const pvp = Number(form.precio_publico) || 0;
+  const pvpUsd = Number(form.precio_publico_usd) || 0;
 
   return (
     <div className="space-y-4">
@@ -566,11 +575,20 @@ export function ProductosPanel({
                       </div>
                       <EstadoPill estado={p.estado} />
                     </div>
-                    <div className="flex flex-wrap items-baseline gap-2">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <span className="text-xs font-bold text-paramo-muted">PVP</span>
-                      <b className="text-paramo-fg">
-                        {p.precio_publico ? formatCOP(p.precio_publico) : "Sin precio"}
-                      </b>
+                      {p.precio_publico || p.precio_publico_usd ? (
+                        <>
+                          {p.precio_publico ? (
+                            <b className="text-paramo-fg">{formatCOP(p.precio_publico)}</b>
+                          ) : null}
+                          {p.precio_publico_usd ? (
+                            <b className="text-paramo-fg">{formatUSD(p.precio_publico_usd)}</b>
+                          ) : null}
+                        </>
+                      ) : (
+                        <b className="text-paramo-fg">Sin precio</b>
+                      )}
                     </div>
                     <div className="text-xs text-paramo-muted">
                       <b className="text-paramo-fg">
@@ -653,6 +671,11 @@ export function ProductosPanel({
                       <b className="block font-paramo-display text-lg text-paramo-fg">
                         {actual.precio_publico ? formatCOP(actual.precio_publico) : "—"}
                       </b>
+                      {actual.precio_publico_usd ? (
+                        <b className="block text-sm text-paramo-fg">
+                          {formatUSD(actual.precio_publico_usd)}
+                        </b>
+                      ) : null}
                       <span className="text-xs text-paramo-muted">PVP · precio venta público</span>
                     </div>
                     <div className="rounded-[10px] border border-paramo-line p-3">
@@ -803,16 +826,32 @@ export function ProductosPanel({
                 </div>
                 <div className="space-y-1">
                   <label htmlFor="pr-pvp" className={labelClass}>
-                    PVP · precio venta público (COP) *
+                    PVP · precio venta público (COP)
                   </label>
                   <InputMoneda
                     id="pr-pvp"
-                    required
                     value={form.precio_publico}
                     onValueChange={(v) => setCampo("precio_publico", v)}
                     className={fieldClass}
                   />
                 </div>
+                <div className="space-y-1">
+                  <label htmlFor="pr-pvp-usd" className={labelClass}>
+                    PVP · precio venta público (USD)
+                  </label>
+                  <InputMoneda
+                    id="pr-pvp-usd"
+                    decimales={2}
+                    value={form.precio_publico_usd}
+                    onValueChange={(v) => setCampo("precio_publico_usd", v)}
+                    placeholder="0,00"
+                    className={fieldClass}
+                  />
+                </div>
+                <p className="text-xs text-paramo-muted sm:col-span-2">
+                  Escribe el PVP en <b>COP</b>, en <b>USD</b> o en ambos (mínimo uno). La
+                  cotización en cada moneda usa el PVP de esa moneda.
+                </p>
                 <div className="space-y-1">
                   <label htmlFor="pr-linea" className={labelClass}>
                     Línea
@@ -920,20 +959,22 @@ export function ProductosPanel({
                 </div>
                 <p className="text-xs text-paramo-muted">
                   Para cada tipo de cliente define un <b>% de descuento sobre el PVP</b>{" "}
-                  o un <b>precio fijo</b>.{" "}
+                  o un <b>precio fijo</b> (en COP). En USD se aplica el mismo % sobre el PVP en
+                  dólares; un precio fijo no se convierte y en USD usa la lista general.{" "}
                   {esNuevo ? "Es obligatorio al crear el producto. " : ""}
                   {esSupervisor
                     ? "Como Supervisor, tus precios quedan en firme de inmediato."
                     : "Los precios que definas quedan pendientes hasta que el Supervisor los apruebe; mientras tanto se cotiza con la lista general."}
                 </p>
                 <div className="overflow-x-auto rounded-[10px] border border-paramo-line">
-                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead>
                       <tr className="border-b border-paramo-line text-[11.5px] font-bold uppercase tracking-wide text-paramo-muted">
                         <th className="px-3 py-2">Tipo de cliente</th>
                         <th className="px-3 py-2">Definir como</th>
                         <th className="px-3 py-2">Valor</th>
-                        <th className="px-3 py-2 text-right">Precio resultante</th>
+                        <th className="px-3 py-2 text-right">Precio resultante (COP)</th>
+                        <th className="px-3 py-2 text-right">Precio resultante (USD)</th>
                         <th className="px-3 py-2">Estado</th>
                       </tr>
                     </thead>
@@ -945,6 +986,9 @@ export function ProductosPanel({
                         <td className="px-3 py-2 text-right font-bold text-paramo-fg">
                           {pvp ? formatCOP(pvp) : "—"}
                         </td>
+                        <td className="px-3 py-2 text-right font-bold text-paramo-fg">
+                          {pvpUsd ? formatUSD(pvpUsd) : "—"}
+                        </td>
                         <td className="px-3 py-2" />
                       </tr>
                       {tiposPrecio.map((t) => {
@@ -954,9 +998,14 @@ export function ProductosPanel({
                           raw === ""
                             ? null
                             : normalizarPrecio({ modo: f.modo, v: Number(raw) });
-                        const resultado =
-                          precioDesdeDefinicion(pvp, def) ||
-                          precioListaGeneral(pvp, t.descuento_pct);
+                        // Mismo cálculo que usa la cotización en cada moneda.
+                        const datos = {
+                          precio_publico: pvp,
+                          precio_publico_usd: pvpUsd,
+                          precios: def ? { [t.codigo]: def } : {},
+                        };
+                        const resultado = precioParaTipo(datos, t, "COP");
+                        const resultadoUsd = precioParaTipo(datos, t, "USD");
                         const pend = actual?.precios_pendientes[t.codigo];
                         const firme = actual
                           ? normalizarPrecio(actual.precios[t.codigo])
@@ -1021,7 +1070,14 @@ export function ProductosPanel({
                                 def ? "text-paramo-fg" : "text-paramo-muted"
                               }`}
                             >
-                              {pvp ? formatCOP(resultado) : "—"}
+                              {resultado ? formatCOP(resultado) : "—"}
+                            </td>
+                            <td
+                              className={`px-3 py-2 text-right font-bold ${
+                                def?.modo === "pct" ? "text-paramo-fg" : "text-paramo-muted"
+                              }`}
+                            >
+                              {resultadoUsd ? formatUSD(resultadoUsd) : "—"}
                             </td>
                             <td className="px-3 py-2">
                               {pend ? (
@@ -1077,6 +1133,45 @@ export function ProductosPanel({
                     </tbody>
                   </table>
                 </div>
+                {actual ? (
+                  <div className="space-y-2 pt-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-paramo-muted">
+                      Historial de cambios en cotización
+                    </h3>
+                    {opinionesData === null ? (
+                      <p className="text-xs text-paramo-muted">Cargando…</p>
+                    ) : opinionesData.cambios_precio.length ? (
+                      <ul className="space-y-1.5 text-sm">
+                        {opinionesData.cambios_precio.map((c, k) => (
+                          <li
+                            key={`${c.cotizacion_id}-${k}`}
+                            className="rounded-lg border border-paramo-line p-2.5"
+                          >
+                            En la cotización{" "}
+                            <Link
+                              href={`/cotizaciones?abrir=${c.cotizacion_id}`}
+                              className="font-bold text-paramo-teal-ink hover:underline"
+                            >
+                              {c.numero}
+                            </Link>{" "}
+                            del cliente <b className="text-paramo-fg">{c.cliente || "—"}</b> el
+                            precio cambió a{" "}
+                            <b className="text-paramo-fg">{formatMoneda(c.precio, c.moneda)}</b>{" "}
+                            <span className="text-paramo-muted">
+                              (catálogo {formatMoneda(c.precio_lista, c.moneda)}
+                              {c.en ? ` · ${fechaCorta(c.en.slice(0, 10))}` : ""}
+                              {c.estado === "pendiente" ? " · por aprobar" : ""})
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-paramo-muted">
+                        Ninguna cotización ha cambiado el precio de este producto.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
               </section>
 
               {error ? (

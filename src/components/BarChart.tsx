@@ -1,4 +1,4 @@
-import { formatMoneyShort } from "@/lib/format";
+import { formatMoneyShort, formatMoneyShortMoneda } from "@/lib/format";
 
 type Punto = { l: string; v: number };
 
@@ -6,6 +6,8 @@ type Props = {
   data: Punto[];
   /** true = montos en COP; false = conteos. */
   money?: boolean;
+  /** Moneda de los montos (por defecto COP). */
+  moneda?: "COP" | "USD";
   label: string;
   H?: number;
   W?: number;
@@ -30,7 +32,7 @@ function tope(max: number, money: boolean): number {
  * Gráfica de barras en SVG (as-is barChart). Sin librerías: el CRM solo necesita barras.
  * La última barra se resalta con la marca; las demás van en teal.
  */
-export function BarChart({ data, money = true, label, H = 240, W = 900 }: Props) {
+export function BarChart({ data, money = true, moneda = "COP", label, H = 240, W = 900 }: Props) {
   const pl = 52;
   const pb = 26;
   const pt = 22;
@@ -83,7 +85,7 @@ export function BarChart({ data, money = true, label, H = 240, W = 900 }: Props)
               rx={3}
               className={ultima ? "fill-paramo-brand" : "fill-paramo-teal"}
             >
-              <title>{`${d.l}: ${money ? fmtCOP(d.v) : fmtN(d.v)}`}</title>
+              <title>{`${d.l}: ${money ? (moneda === "USD" ? "USD " + d.v.toLocaleString("es-CO", { maximumFractionDigits: 2 }) : fmtCOP(d.v)) : fmtN(d.v)}`}</title>
             </rect>
             <text x={x + w / 2} y={H - 8} textAnchor="middle" className="fill-paramo-muted">
               {d.l}
@@ -95,7 +97,7 @@ export function BarChart({ data, money = true, label, H = 240, W = 900 }: Props)
                 textAnchor="middle"
                 className="fill-paramo-fg font-bold"
               >
-                {money ? formatMoneyShort(d.v) : fmtN(d.v)}
+                {money ? formatMoneyShortMoneda(d.v, moneda) : fmtN(d.v)}
               </text>
             ) : null}
           </g>

@@ -1,5 +1,10 @@
 "use client";
 
+import { FUENTE_OTRO } from "@/config/prospectos";
+import { ValorEstimadoInput } from "@/components/ValorEstimadoInput";
+import { formatMoneyShortMoneda } from "@/lib/format";
+import type { Moneda } from "@/lib/precios";
+import { sumarPorMoneda, textoPorMoneda } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -16,12 +21,10 @@ import { CALIF_TXT, stars3 } from "@/config/calificacion";
 import { ETAPA_COL_COLOR, STALE_DAYS } from "@/config/funnel";
 import { MOTIVOS_PERDIDA } from "@/config/motivos-perdida";
 import { ROL_LABEL, type Rol } from "@/config/roles";
-import { InputMoneda } from "@/components/InputMoneda";
 import { canAsignarResponsable, canEditProspecto } from "@/lib/can";
 import { cn } from "@/lib/cn";
 import {
   daysBetween,
-  formatMoneyShort,
   initials,
   localDayBogota,
   todayBogota,
@@ -53,8 +56,10 @@ type FormState = {
   ciudad: string;
   canal_codigo: string;
   fuente_codigo: string;
+  fuente_otro: string;
   etapa_codigo: string;
   valor_mensual_estimado: string;
+  valor_moneda: Moneda;
   calificacion: string;
   notas: string;
   responsable_id: string;
@@ -71,8 +76,10 @@ function emptyForm(defaultResponsableId: string, etapaDefault: string): FormStat
     ciudad: "",
     canal_codigo: "",
     fuente_codigo: "",
+    fuente_otro: "",
     etapa_codigo: etapaDefault,
     valor_mensual_estimado: "",
+    valor_moneda: "COP",
     calificacion: "0",
     notas: "",
     responsable_id: defaultResponsableId,
@@ -233,9 +240,11 @@ export function FunnelPanel({
       }),
     [activos, etapas],
   );
-  const valorEnJuego = enGestion.reduce(
-    (a, p) => a + (p.valor_mensual_estimado || 0),
-    0,
+  // COP y USD no se suman entre sí: se muestran por separado.
+  const valorEnJuego = sumarPorMoneda(
+    enGestion,
+    (p) => p.valor_mensual_estimado,
+    (p) => p.valor_moneda,
   );
 
   const openProspecto = openId
@@ -347,7 +356,9 @@ export function FunnelPanel({
         ciudad: form.ciudad,
         canal_codigo: form.canal_codigo || null,
         fuente_codigo: form.fuente_codigo || null,
+        fuente_otro: form.fuente_codigo === FUENTE_OTRO ? form.fuente_otro.trim() : "",
         etapa_codigo: form.etapa_codigo || etapaDefault,
+        valor_moneda: form.valor_moneda,
         valor_mensual_estimado: form.valor_mensual_estimado
           ? Number(form.valor_mensual_estimado)
           : 0,
@@ -404,7 +415,7 @@ export function FunnelPanel({
           </h1>
           <p className="text-sm text-paramo-muted">
             {enGestion.length} oportunidades activas ·{" "}
-            {formatMoneyShort(valorEnJuego)}/mes en juego
+            {textoPorMoneda(valorEnJuego)}/mes en juego
             {finePointer
               ? " · arrastra las tarjetas o usa →"
               : " · usa → o abre la ficha para cambiar etapa"}
@@ -451,9 +462,10 @@ export function FunnelPanel({
                 (b.valor_mensual_estimado || 0) -
                   (a.valor_mensual_estimado || 0),
             );
-          const sum = ps.reduce(
-            (a, p) => a + (p.valor_mensual_estimado || 0),
-            0,
+          const sum = sumarPorMoneda(
+            ps,
+            (p) => p.valor_mensual_estimado,
+            (p) => p.valor_moneda,
           );
           const next = nextEtapa(stage.codigo);
           const colColor =
@@ -487,7 +499,7 @@ export function FunnelPanel({
                   </span>
                 </div>
                 <span className="text-xs text-paramo-muted">
-                  {formatMoneyShort(sum)}/mes · {stage.probabilidad}%
+                  {textoPorMoneda(sum)}/mes · {stage.probabilidad}%
                 </span>
               </div>
 
@@ -554,7 +566,7 @@ export function FunnelPanel({
                     <div className="flex items-center justify-between gap-1.5 text-xs">
                       <span className="text-paramo-fg">
                         {p.valor_mensual_estimado ? (
-                          formatMoneyShort(p.valor_mensual_estimado)
+                          formatMoneyShortMoneda(p.valor_mensual_estimado, p.valor_moneda)
                         ) : (
                           <span className="text-paramo-muted">sin valor</span>
                         )}
@@ -851,14 +863,32 @@ export function FunnelPanel({
                     ))}
                   </select>
                 </div>
+                {form.fuente_codigo === FUENTE_OTRO && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <label htmlFor="fn-fuente-otro" className={labelClass}>
+                      ¿Cuál canal? *
+                    </label>
+                    <input
+                      id="fn-fuente-otro"
+                      required
+                      maxLength={80}
+                      value={form.fuente_otro}
+                      onChange={(e) => setField("fuente_otro", e.target.value)}
+                      placeholder="Ej.: Alianza con gimnasios"
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label htmlFor="fn-valor" className={labelClass}>
-                    Venta mensual estimada (COP)
+                    Venta mensual estimada
                   </label>
-                  <InputMoneda
+                  <ValorEstimadoInput
                     id="fn-valor"
-                    value={form.valor_mensual_estimado}
-                    onValueChange={(v) => setField("valor_mensual_estimado", v)}
+                    moneda={form.valor_moneda}
+                    valor={form.valor_mensual_estimado}
+                    onMoneda={(m) => setField("valor_moneda", m)}
+                    onValor={(v) => setField("valor_mensual_estimado", v)}
                     className={fieldClass}
                   />
                 </div>

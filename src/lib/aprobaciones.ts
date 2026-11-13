@@ -3,7 +3,8 @@ import type { Rol } from "@/config/roles";
 import { cargarCotizaciones } from "@/lib/cotizaciones";
 import { sumarDias } from "@/lib/fechas";
 import { localDayBogota, todayBogota } from "@/lib/format";
-import { normalizarPrecio, textoPrecio } from "@/lib/precios";
+import { lineasConPrecioCambiado } from "@/lib/cotizaciones-calculo";
+import { normalizarPrecio, textoPrecio, type Moneda } from "@/lib/precios";
 import { cargarProductos } from "@/lib/productos";
 
 export type DescuentoPorAprobar = {
@@ -12,7 +13,10 @@ export type DescuentoPorAprobar = {
   cliente: string;
   solicitante: string;
   descuento: number;
+  /** Líneas cuyo precio cambió el comercial respecto al catálogo. */
+  precios_cambiados: number;
   total: number;
+  moneda: Moneda;
   solicitado_en: string | null;
 };
 
@@ -31,7 +35,9 @@ export type RespuestaSupervisor = {
   cliente: string;
   rechazada: boolean;
   descuento: number;
+  precios_cambiados: number;
   total: number;
+  moneda: Moneda;
 };
 
 export type DatosAprobaciones = {
@@ -66,7 +72,9 @@ export async function cargarAprobaciones(
           cliente: c.cliente_nombre,
           solicitante: c.creado_por_nombre,
           descuento: c.desc_solicitado ?? c.desc_pct,
+          precios_cambiados: lineasConPrecioCambiado(c.items).length,
           total: c.total,
+          moneda: c.moneda,
           solicitado_en: c.solicitado_en,
         })),
       precios: (productos ?? []).flatMap((p) =>
@@ -102,7 +110,9 @@ export async function cargarAprobaciones(
         cliente: c.cliente_nombre,
         rechazada: c.estado === "rechazada",
         descuento: c.rechazo?.solicitado ?? c.aprobacion?.desc ?? 0,
+        precios_cambiados: lineasConPrecioCambiado(c.items).length,
         total: c.total,
+        moneda: c.moneda,
       })),
   };
 }
